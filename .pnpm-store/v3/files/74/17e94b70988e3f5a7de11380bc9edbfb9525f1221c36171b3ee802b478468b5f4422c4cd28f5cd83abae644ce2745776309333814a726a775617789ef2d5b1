@@ -1,0 +1,1415 @@
+'use strict';
+
+const vue = require('vue');
+const core = require('@hybridly/core');
+const utils = require('@hybridly/utils');
+const nprogress = require('nprogress');
+const devtoolsApi = require('@vue/devtools-api');
+const qs = require('qs');
+const dotDiver = require('@clickbar/dot-diver');
+const isEqual = require('lodash.isequal');
+const hybridly = require('hybridly');
+
+function _interopDefaultCompat (e) { return e && typeof e === 'object' && 'default' in e ? e.default : e; }
+
+const nprogress__default = /*#__PURE__*/_interopDefaultCompat(nprogress);
+const qs__default = /*#__PURE__*/_interopDefaultCompat(qs);
+const isEqual__default = /*#__PURE__*/_interopDefaultCompat(isEqual);
+
+function progress(options) {
+  const resolved = {
+    delay: 250,
+    color: "#29d",
+    includeCSS: true,
+    spinner: false,
+    ...options
+  };
+  let timeout;
+  function startProgress() {
+    nprogress__default.start();
+  }
+  function finishProgress() {
+    if (nprogress__default.isStarted()) {
+      nprogress__default.done(true);
+    }
+  }
+  function cancelProgress() {
+    if (nprogress__default.isStarted()) {
+      nprogress__default.done(true);
+      nprogress__default.remove();
+    }
+  }
+  return core.definePlugin({
+    name: "hybridly:progress",
+    initialized() {
+      nprogress__default.configure({ showSpinner: resolved.spinner });
+      if (resolved.includeCSS) {
+        injectCSS(resolved.color);
+      }
+    },
+    start: (context) => {
+      if (context.pendingNavigation?.options.progress === false) {
+        return;
+      }
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        finishProgress();
+        startProgress();
+      }, resolved.delay);
+    },
+    progress: (progress2) => {
+      if (nprogress__default.isStarted() && progress2.percentage) {
+        nprogress__default.set(Math.max(nprogress__default.status, progress2.percentage / 100 * 0.9));
+      }
+    },
+    success: () => finishProgress(),
+    error: () => cancelProgress(),
+    fail: () => cancelProgress(),
+    after: () => clearTimeout(timeout)
+  });
+}
+function injectCSS(color) {
+  const element = document.createElement("style");
+  element.textContent = `
+    #nprogress {
+      pointer-events: none;
+			--progress-color: ${color};
+    }
+    #nprogress .bar {
+      background: var(--progress-color);
+      position: fixed;
+      z-index: 1031;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+    }
+    #nprogress .peg {
+      display: block;
+      position: absolute;
+      right: 0px;
+      width: 100px;
+      height: 100%;
+      box-shadow: 0 0 10px var(--progress-color), 0 0 5px var(--progress-color);
+      opacity: 1.0;
+      -webkit-transform: rotate(3deg) translate(0px, -4px);
+          -ms-transform: rotate(3deg) translate(0px, -4px);
+              transform: rotate(3deg) translate(0px, -4px);
+    }
+    #nprogress .spinner {
+      display: block;
+      position: fixed;
+      z-index: 1031;
+      top: 15px;
+      right: 15px;
+    }
+    #nprogress .spinner-icon {
+      width: 18px;
+      height: 18px;
+      box-sizing: border-box;
+      border: solid 2px transparent;
+      border-top-color: var(--progress-color);
+      border-left-color: var(--progress-color);
+      border-radius: 50%;
+      -webkit-animation: nprogress-spinner 400ms linear infinite;
+              animation: nprogress-spinner 400ms linear infinite;
+    }
+    .nprogress-custom-parent {
+      overflow: hidden;
+      position: relative;
+    }
+    .nprogress-custom-parent #nprogress .spinner,
+    .nprogress-custom-parent #nprogress .bar {
+      position: absolute;
+    }
+    @-webkit-keyframes nprogress-spinner {
+      0%   { -webkit-transform: rotate(0deg); }
+      100% { -webkit-transform: rotate(360deg); }
+    }
+    @keyframes nprogress-spinner {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(element);
+}
+
+const DEBUG_KEY = "vue:state:dialog";
+const dialogStore = {
+  state: {
+    component: vue.shallowRef(),
+    properties: vue.ref(),
+    key: vue.ref(),
+    show: vue.ref()
+  },
+  removeComponent() {
+    if (dialogStore.state.component.value) {
+      utils.debug.adapter(DEBUG_KEY, "Removing dialog.");
+      dialogStore.state.component.value = void 0;
+    }
+  },
+  setComponent(component) {
+    utils.debug.adapter(DEBUG_KEY, "Setting dialog component:", component);
+    dialogStore.state.component.value = component;
+  },
+  setProperties(properties) {
+    utils.debug.adapter(DEBUG_KEY, "Setting dialog properties:", properties);
+    dialogStore.state.properties.value = vue.unref(properties);
+  },
+  setKey(key) {
+    utils.debug.adapter(DEBUG_KEY, "Setting dialog key:", { new: key, previous: dialogStore.state.key.value });
+    dialogStore.state.key.value = vue.unref(key);
+  },
+  show() {
+    if (!dialogStore.state.show.value) {
+      utils.debug.adapter(DEBUG_KEY, "Showing the dialog.");
+      dialogStore.state.show.value = true;
+    }
+  },
+  hide() {
+    if (dialogStore.state.show.value) {
+      utils.debug.adapter(DEBUG_KEY, "Hiding the dialog.");
+      dialogStore.state.show.value = false;
+    }
+  }
+};
+
+const onMountedCallbacks = [];
+
+const state = {
+  context: vue.ref(),
+  view: vue.shallowRef(),
+  properties: vue.ref(),
+  viewLayout: vue.shallowRef(),
+  viewLayoutProperties: vue.ref(),
+  viewKey: vue.ref(),
+  setView(view) {
+    utils.debug.adapter("vue:state:view", "Storing view:", view);
+    state.view.value = view;
+  },
+  setProperties(properties) {
+    utils.debug.adapter("vue:state:view", "Storing properties:", properties);
+    state.properties.value = properties;
+  },
+  setViewLayout(layout) {
+    utils.debug.adapter("vue:state:view", "Storing layout", layout);
+    state.viewLayout.value = layout;
+  },
+  setViewLayoutProperties(properties) {
+    utils.debug.adapter("vue:state:view", "Storing layout properties:", properties);
+    state.viewLayoutProperties.value = properties;
+  },
+  setContext(context) {
+    utils.debug.adapter("vue:state:context", "Storing context:", context);
+    state.context.value = vue.unref(context);
+    vue.triggerRef(state.context);
+  },
+  setViewKey(key) {
+    utils.debug.adapter("vue:state:key", "Storing view key:", key);
+    state.viewKey.value = vue.unref(key);
+  }
+};
+
+const wrapper = vue.defineComponent({
+  name: "Hybridly",
+  setup() {
+    function renderLayout(view) {
+      utils.debug.adapter("vue:render:layout", "Rendering layout.");
+      if (typeof state.view.value?.layout === "function") {
+        return state.view.value.layout(vue.h, view, renderDialog());
+      }
+      if (Array.isArray(state.view.value?.layout)) {
+        const layoutsAndView = state.view.value.layout.concat(view).reverse().reduce((child, layout) => {
+          layout.inheritAttrs = !!layout.inheritAttrs;
+          return vue.h(layout, {
+            ...state.view.value?.layoutProperties ?? {},
+            ...state.properties.value
+          }, () => child);
+        });
+        return [layoutsAndView, renderDialog()];
+      }
+      return [
+        vue.h(state.view.value?.layout, {
+          ...state.view.value?.layoutProperties ?? {},
+          ...state.properties.value
+        }, () => view),
+        renderDialog()
+      ];
+    }
+    function hijackOnMounted(component, type) {
+      if (!component) {
+        return;
+      }
+      const actual = component?.mounted;
+      component.mounted = () => {
+        actual?.();
+        vue.nextTick(() => {
+          utils.debug.adapter(`vue:render:${type}`, "Calling mounted callbacks.");
+          while (onMountedCallbacks.length) {
+            onMountedCallbacks.shift()?.();
+          }
+        });
+      };
+    }
+    function renderView() {
+      utils.debug.adapter("vue:render:view", "Rendering view.");
+      state.view.value.inheritAttrs = !!state.view.value.inheritAttrs;
+      hijackOnMounted(state.view.value, "view");
+      return vue.h(state.view.value, {
+        ...state.properties.value,
+        key: state.viewKey.value
+      });
+    }
+    function renderDialog() {
+      if (dialogStore.state.component.value && dialogStore.state.properties.value) {
+        utils.debug.adapter("vue:render:dialog", "Rendering dialog.");
+        hijackOnMounted(dialogStore.state.component.value, "dialog");
+        return vue.h(dialogStore.state.component.value, {
+          ...dialogStore.state.properties.value,
+          key: dialogStore.state.key.value
+        });
+      }
+    }
+    return (...a) => {
+      if (!state.view.value) {
+        return;
+      }
+      utils.debug.adapter("vue:render:wrapper", "Rendering wrapper component.", a.map(vue.toRaw));
+      const view = renderView();
+      if (state.viewLayout.value) {
+        state.view.value.layout = state.viewLayout.value;
+      }
+      if (state.viewLayoutProperties.value) {
+        state.view.value.layoutProperties = state.viewLayoutProperties.value;
+        state.viewLayoutProperties.value = void 0;
+      }
+      if (state.view.value.layout) {
+        return renderLayout(view);
+      }
+      return [view, renderDialog()];
+    };
+  }
+});
+
+const hybridlyStateType = "hybridly";
+const hybridlyEventsTimelineLayerId = "Hybridly";
+function setupDevtools(app) {
+  devtoolsApi.setupDevtoolsPlugin({
+    id: "hybridly",
+    label: "Hybridly",
+    packageName: "@hybridly/vue",
+    homepage: "https://github.com/hybridly",
+    app,
+    enableEarlyProxy: true,
+    componentStateTypes: [
+      hybridlyStateType
+    ]
+  }, (api) => {
+    api.on.inspectComponent((payload) => {
+      payload.instanceData.state.push({
+        type: hybridlyStateType,
+        key: "properties",
+        value: state.context.value?.view.properties,
+        editable: true
+      });
+      payload.instanceData.state.push({
+        type: hybridlyStateType,
+        key: "component",
+        value: state.context.value?.view.component
+      });
+      payload.instanceData.state.push({
+        type: hybridlyStateType,
+        key: "deferred",
+        value: state.context.value?.view.deferred
+      });
+      payload.instanceData.state.push({
+        type: hybridlyStateType,
+        key: "dialog",
+        value: state.context.value?.dialog
+      });
+      payload.instanceData.state.push({
+        type: hybridlyStateType,
+        key: "version",
+        value: state.context.value?.version
+      });
+      payload.instanceData.state.push({
+        type: hybridlyStateType,
+        key: "url",
+        value: state.context.value?.url
+      });
+      payload.instanceData.state.push({
+        type: hybridlyStateType,
+        key: "routing",
+        value: state.context.value?.routing
+      });
+    });
+    api.on.editComponentState((payload) => {
+      if (payload.type === hybridlyStateType) {
+        payload.set(state.context.value?.view);
+      }
+    });
+    api.addTimelineLayer({
+      id: hybridlyEventsTimelineLayerId,
+      color: 16501221,
+      label: "Hybridly"
+    });
+    const listen = [
+      "start",
+      "ready",
+      "data",
+      "navigating",
+      "navigated",
+      "progress",
+      "error",
+      "abort",
+      "success",
+      "invalid",
+      "exception",
+      "fail",
+      "after",
+      "backForward",
+      "success"
+    ];
+    core.registerHook("before", (options) => {
+      const groupId = (Math.random() + 1).toString(36).substring(7);
+      api.addTimelineEvent({
+        layerId: hybridlyEventsTimelineLayerId,
+        event: {
+          groupId,
+          title: "before",
+          time: api.now(),
+          data: options
+        }
+      });
+      listen.forEach((event) => core.registerHook(event, (data) => {
+        api.addTimelineEvent({
+          layerId: hybridlyEventsTimelineLayerId,
+          event: {
+            groupId,
+            title: event,
+            time: api.now(),
+            data
+          }
+        });
+        if (event === "after") {
+          setTimeout(() => {
+            vue.triggerRef(state.context);
+            api.notifyComponentUpdate();
+          }, 100);
+        }
+      }, { once: true }));
+    });
+  });
+}
+const devtools = {
+  install(app) {
+    if (process.env.NODE_ENV === "development" || __VUE_PROD_DEVTOOLS__) {
+      setupDevtools(app);
+    }
+  }
+};
+
+function viewTransition() {
+  if (!document.startViewTransition) {
+    return { name: "view-transition" };
+  }
+  let domUpdated;
+  return {
+    name: "view-transition",
+    navigating: async ({ type, hasDialog }) => {
+      if (type === "initial" || hasDialog) {
+        return;
+      }
+      return new Promise((confirmTransitionStarted) => document.startViewTransition(() => {
+        confirmTransitionStarted(true);
+        return new Promise((resolve) => domUpdated = resolve);
+      }));
+    },
+    mounted: () => {
+      domUpdated?.();
+      domUpdated = void 0;
+    },
+    navigated: () => {
+      domUpdated?.();
+      domUpdated = void 0;
+    }
+  };
+}
+
+async function initializeHybridly(options = {}) {
+  const resolved = options;
+  const { element, payload, resolve } = prepare(resolved);
+  if (!element) {
+    throw new Error("Could not find an HTML element to initialize Vue on.");
+  }
+  state.setContext(await core.createRouter({
+    axios: resolved.axios,
+    plugins: resolved.plugins,
+    serializer: resolved.serializer,
+    responseErrorModals: resolved.responseErrorModals ?? process.env.NODE_ENV === "development",
+    routing: resolved.routing,
+    adapter: {
+      resolveComponent: resolve,
+      executeOnMounted: (callback) => {
+        onMountedCallbacks.push(callback);
+      },
+      onDialogClose: async () => {
+        dialogStore.hide();
+      },
+      onContextUpdate: (context) => {
+        state.setContext(context);
+      },
+      onViewSwap: async (options2) => {
+        if (options2.component) {
+          onMountedCallbacks.push(() => options2.onMounted?.({ isDialog: false }));
+          state.setView(options2.component);
+        }
+        state.setProperties(options2.properties);
+        if (!options2.preserveState && !options2.dialog) {
+          state.setViewKey(utils.random());
+        }
+        if (options2.dialog) {
+          onMountedCallbacks.push(() => options2.onMounted?.({ isDialog: true }));
+          dialogStore.setComponent(await resolve(options2.dialog.component));
+          dialogStore.setProperties(options2.dialog.properties);
+          dialogStore.setKey(options2.dialog.key);
+          dialogStore.show();
+        } else {
+          dialogStore.hide();
+        }
+      }
+    },
+    payload
+  }));
+  const render = () => vue.h(wrapper);
+  if (options.setup) {
+    return await options.setup({
+      element,
+      wrapper,
+      render,
+      hybridly: devtools,
+      props: { context: state.context.value }
+    });
+  }
+  const app = vue.createApp({ render });
+  if (resolved.devtools !== false) {
+    app.use(devtools);
+  }
+  await options.enhanceVue?.(app);
+  return app.mount(element);
+}
+function prepare(options) {
+  utils.debug.adapter("vue", "Preparing Hybridly with options:", options);
+  const isServer = typeof window === "undefined";
+  const id = options.id ?? "root";
+  const element = document?.getElementById(id) ?? void 0;
+  utils.debug.adapter("vue", `Element "${id}" is:`, element);
+  const payload = element?.dataset.payload ? JSON.parse(element.dataset.payload) : void 0;
+  if (!payload) {
+    throw new Error("No payload found. Are you using the `@hybridly` directive?");
+  }
+  if (options.cleanup !== false) {
+    delete element.dataset.payload;
+  }
+  utils.debug.adapter("vue", "Resolved:", { isServer, element, payload });
+  const resolve = async (name) => {
+    utils.debug.adapter("vue", "Resolving component", name);
+    if (!options.imported) {
+      throw new Error("No component loaded. Did you initialize Hybridly? Does `php artisan hybridly:config` return an error?");
+    }
+    return await resolveViewComponent(name, options);
+  };
+  options.plugins ?? (options.plugins = []);
+  if (options.progress !== false) {
+    options.plugins.push(progress(typeof options.progress === "object" ? options.progress : {}));
+  }
+  if (options.viewTransition !== false) {
+    options.plugins.push(viewTransition());
+  }
+  return {
+    isServer,
+    element,
+    payload,
+    resolve
+  };
+}
+async function resolveViewComponent(name, options) {
+  const components = options.imported;
+  const result = options.components.views.find((view) => name === view.identifier);
+  const path = Object.keys(components).sort((a, b) => a.length - b.length).find((path2) => result ? path2.endsWith(result?.path) : false);
+  if (!result || !path) {
+    console.warn(`View component [${name}] not found. Available components: `, options.components.views.map(({ identifier }) => identifier));
+    utils.showViewComponentErrorModal(name);
+    return;
+  }
+  let component = typeof components[path] === "function" ? await components[path]() : components[path];
+  component = component.default ?? component;
+  return component;
+}
+
+const RouterLink = vue.defineComponent({
+  name: "RouterLink",
+  setup(_, { slots, attrs }) {
+    return (props) => {
+      let data = props.data ?? {};
+      const preloads = props.preload ?? false;
+      const preserveScroll = props.preserveScroll;
+      const preserveState = props.preserveState;
+      const url = core.makeUrl(props.href ?? "");
+      const method = props.method?.toUpperCase() ?? "GET";
+      const as = typeof props.as === "object" ? props.as : props.as?.toLowerCase() ?? "a";
+      if (method === "GET") {
+        utils.debug.adapter("vue", "Moving data object to URL parameters.");
+        url.search = qs__default.stringify(utils.merge(data, qs__default.parse(url.search, { ignoreQueryPrefix: true })), {
+          encodeValuesOnly: true,
+          arrayFormat: "indices"
+        });
+        data = {};
+      }
+      if (as === "a" && method !== "GET") {
+        utils.debug.adapter("vue", `Creating POST/PUT/PATCH/DELETE <a> links is discouraged as it causes "Open Link in New Tab/Window" accessibility issues.
+
+Please specify a more appropriate element using the "as" attribute. For example:
+
+<RouterLink href="${url}" method="${method}" as="button">...</RouterLink>`);
+      }
+      function performPreload(type) {
+        if (!preloads) {
+          return;
+        }
+        if (props.external) {
+          return;
+        }
+        if (method !== "GET") {
+          return;
+        }
+        if (type !== "mount" && props.disabled) {
+          return;
+        }
+        if (type === "hover" && preloads === "mount") {
+          return;
+        }
+        if (type === "mount" && preloads !== "mount") {
+          return;
+        }
+        core.router.preload(url, {
+          data,
+          preserveScroll,
+          preserveState,
+          ...props.options
+        });
+      }
+      performPreload("mount");
+      return vue.h(props.as, {
+        ...attrs,
+        ...as === "a" ? { href: url } : {},
+        ...props.disabled ? { disabled: props.disabled } : {},
+        onMouseenter: () => performPreload("hover"),
+        onClick: (event) => {
+          if (props.external) {
+            return;
+          }
+          if (!shouldIntercept(event)) {
+            return;
+          }
+          event.preventDefault();
+          if (props.disabled) {
+            return;
+          }
+          core.router.navigate({
+            url,
+            data,
+            method,
+            preserveState: method !== "GET",
+            ...props.options
+          });
+        }
+      }, slots.default ? slots : props.text);
+    };
+  },
+  props: {
+    href: {
+      type: String,
+      required: false,
+      default: void 0
+    },
+    as: {
+      type: [String, Object],
+      default: "a"
+    },
+    method: {
+      type: String,
+      default: "GET"
+    },
+    data: {
+      type: Object,
+      default: () => ({})
+    },
+    external: {
+      type: Boolean,
+      default: false
+    },
+    disabled: {
+      type: Boolean,
+      default: false
+    },
+    options: {
+      type: Object,
+      default: () => ({})
+    },
+    text: {
+      type: String,
+      required: false,
+      default: void 0
+    },
+    preload: {
+      type: [Boolean, String],
+      default: false
+    },
+    preserveScroll: {
+      type: Boolean,
+      default: void 0
+    },
+    preserveState: {
+      type: Boolean,
+      default: void 0
+    }
+  }
+});
+function shouldIntercept(event) {
+  const isLink = event.currentTarget.tagName.toLowerCase() === "a";
+  return !(event.target && (event?.target).isContentEditable || event.defaultPrevented || isLink && event.which > 1 || isLink && event.altKey || isLink && event.ctrlKey || isLink && event.metaKey || isLink && event.shiftKey);
+}
+
+function toReactive(objectRef) {
+  if (!vue.isRef(objectRef)) {
+    return vue.reactive(objectRef);
+  }
+  const proxy = new Proxy({}, {
+    get(_, p, receiver) {
+      return vue.unref(Reflect.get(objectRef.value, p, receiver));
+    },
+    set(_, p, value) {
+      if (vue.isRef(objectRef.value[p]) && !vue.isRef(value)) {
+        objectRef.value[p].value = value;
+      } else {
+        objectRef.value[p] = value;
+      }
+      return true;
+    },
+    deleteProperty(_, p) {
+      return Reflect.deleteProperty(objectRef.value, p);
+    },
+    has(_, p) {
+      return Reflect.has(objectRef.value, p);
+    },
+    ownKeys() {
+      return Object.keys(objectRef.value);
+    },
+    getOwnPropertyDescriptor() {
+      return {
+        enumerable: true,
+        configurable: true
+      };
+    }
+  });
+  return vue.reactive(proxy);
+}
+
+function useProperties() {
+  return vue.readonly(toReactive(vue.computed(() => state.context.value?.view.properties)));
+}
+function useProperty(path) {
+  return vue.computed(() => dotDiver.getByPath(state.context.value?.view.properties, path));
+}
+function setProperty(path, value) {
+  if (!state.context.value?.view.properties) {
+    return;
+  }
+  dotDiver.setByPath(state.context.value.view.properties, path, vue.toValue(value));
+}
+
+function useContext() {
+  return vue.computed(() => state.context.value);
+}
+
+function safeClone(obj) {
+  return utils.clone(vue.toRaw(obj));
+}
+function useForm(options) {
+  const shouldRemember = !!options?.key;
+  const historyKey = options?.key ?? "form:default";
+  const historyData = shouldRemember ? core.router.history.get(historyKey) : void 0;
+  const timeoutIds = {
+    recentlyFailed: void 0,
+    recentlySuccessful: void 0
+  };
+  const initial = safeClone(options.fields);
+  const loaded = safeClone(historyData?.fields ?? options.fields);
+  const fields = vue.reactive(safeClone(loaded));
+  const errors = vue.ref(historyData?.errors ?? {});
+  const isDirty = vue.ref(false);
+  const recentlySuccessful = vue.ref(false);
+  const successful = vue.ref(false);
+  const recentlyFailed = vue.ref(false);
+  const failed = vue.ref(false);
+  const processing = vue.ref(false);
+  const progress = vue.ref();
+  function setInitial(newInitial) {
+    Object.entries(newInitial).forEach(([key, value]) => {
+      Reflect.set(initial, key, safeClone(value));
+    });
+  }
+  function reset(...keys) {
+    if (keys.length === 0) {
+      keys = Object.keys(fields);
+    }
+    keys.forEach((key) => {
+      Reflect.set(fields, key, safeClone(Reflect.get(initial, key)));
+    });
+  }
+  function clear(...keys) {
+    if (keys.length === 0) {
+      keys = Object.keys(fields);
+    }
+    keys.forEach((key) => {
+      delete fields[key];
+    });
+  }
+  function submit(optionsOverrides) {
+    const url = typeof options.url === "function" ? options.url() : options.url;
+    const data = typeof options.transform === "function" ? options.transform?.(fields) : fields;
+    const preserveState = optionsOverrides?.preserveState ?? options.preserveState;
+    return core.router.navigate({
+      ...options,
+      url: url ?? state.context.value?.url,
+      method: options.method ?? "POST",
+      ...optionsOverrides,
+      data: safeClone(data),
+      preserveState: preserveState === void 0 && options.method !== "GET" ? true : preserveState,
+      hooks: {
+        before: (navigation, context) => {
+          failed.value = false;
+          successful.value = false;
+          recentlySuccessful.value = false;
+          clearTimeout(timeoutIds.recentlySuccessful);
+          clearTimeout(timeoutIds.recentlyFailed);
+          return options.hooks?.before?.(navigation, context);
+        },
+        start: (context) => {
+          processing.value = true;
+          return options.hooks?.start?.(context);
+        },
+        progress: (incoming, context) => {
+          progress.value = incoming;
+          return options.hooks?.progress?.(incoming, context);
+        },
+        error: (incoming, context) => {
+          setErrors(incoming);
+          failed.value = true;
+          recentlyFailed.value = true;
+          timeoutIds.recentlyFailed = setTimeout(() => recentlyFailed.value = false, options?.timeout ?? 5e3);
+          return options.hooks?.error?.(incoming, context);
+        },
+        success: (payload, context) => {
+          clearErrors();
+          if (options?.updateInitials) {
+            setInitial(fields);
+          }
+          if (options?.reset !== false) {
+            reset();
+          }
+          successful.value = true;
+          recentlySuccessful.value = true;
+          timeoutIds.recentlySuccessful = setTimeout(() => recentlySuccessful.value = false, options?.timeout ?? 5e3);
+          return options.hooks?.success?.(payload, context);
+        },
+        after: (context) => {
+          progress.value = void 0;
+          processing.value = false;
+          return options.hooks?.after?.(context);
+        }
+      }
+    });
+  }
+  function clearErrors(...keys) {
+    if (keys.length === 0) {
+      keys = Object.keys(fields);
+    }
+    keys.forEach((key) => {
+      clearError(key);
+    });
+  }
+  function hasDirty(...keys) {
+    if (keys.length === 0) {
+      return isDirty.value;
+    }
+    return keys.some((key) => !isEqual__default(vue.toRaw(dotDiver.getByPath(fields, key)), vue.toRaw(dotDiver.getByPath(initial, key))));
+  }
+  function clearError(key) {
+    utils.unsetPropertyAtPath(errors.value, key);
+  }
+  function setErrors(incoming) {
+    clearErrors();
+    Object.entries(incoming).forEach(([path, value]) => {
+      utils.setValueAtPath(errors.value, path, value);
+    });
+  }
+  function abort() {
+    core.router.abort();
+  }
+  vue.watch([fields, processing, errors], () => {
+    isDirty.value = !isEqual__default(vue.toRaw(loaded), vue.toRaw(fields));
+    if (shouldRemember) {
+      core.router.history.remember(historyKey, {
+        fields: vue.toRaw(fields),
+        errors: vue.toRaw(errors.value)
+      });
+    }
+  }, { deep: true, immediate: true });
+  return vue.reactive({
+    reset,
+    clear,
+    fields,
+    abort,
+    setErrors,
+    clearErrors,
+    clearError,
+    setInitial,
+    hasDirty,
+    submitWith: submit,
+    /** @deprecated Use `submitWith` instead */
+    submitWithOptions: submit,
+    submit: () => submit(),
+    hasErrors: vue.computed(() => Object.values(errors.value ?? {}).length > 0),
+    initial,
+    loaded,
+    progress,
+    isDirty,
+    errors,
+    processing,
+    successful,
+    failed,
+    recentlySuccessful,
+    recentlyFailed
+  });
+}
+
+function useHistoryState(key, initial) {
+  const value = vue.ref(core.router.history.get(key) ?? initial);
+  vue.watch(value, (value2) => {
+    core.router.history.remember(key, vue.toRaw(value2));
+  }, { immediate: true, deep: true });
+  return value;
+}
+
+function useBackForward() {
+  const callbacks = [];
+  core.registerHook("navigated", (options) => {
+    if (options.type === "back-forward") {
+      callbacks.forEach((fn) => fn(state.context.value));
+      callbacks.splice(0, callbacks.length);
+    }
+  });
+  function onBackForward(fn) {
+    callbacks.push(fn);
+  }
+  function reloadOnBackForward(options) {
+    onBackForward(() => core.router.reload(options));
+  }
+  return {
+    onBackForward,
+    reloadOnBackForward
+  };
+}
+
+function defineLayout(...args) {
+  const layouts = args[0];
+  const properties = args[1];
+  state.setViewLayout(layouts);
+  state.setViewLayoutProperties(properties);
+}
+function defineLayoutProperties(properties) {
+  state.setViewLayoutProperties(properties);
+}
+
+const registerHook = (hook, fn, options) => {
+  const unregister = core.registerHook(hook, fn, options);
+  if (vue.getCurrentInstance()) {
+    vue.onUnmounted(() => unregister());
+  }
+  return unregister;
+};
+
+function useDialog() {
+  return {
+    /** Closes the dialog. */
+    close: () => hybridly.router.dialog.close(),
+    /** Closes the dialog without a server round-trip. */
+    closeLocally: () => hybridly.router.dialog.close({ local: true }),
+    /** Unmounts the dialog. Should be called after its closing animations. */
+    unmount: () => dialogStore.removeComponent(),
+    /** Whether the dialog is shown. */
+    show: vue.computed(() => dialogStore.state.show.value),
+    /** Properties of the dialog. */
+    properties: vue.computed(() => state.context.value?.dialog?.properties)
+  };
+}
+
+function useRefinements(properties, refinementsKeys, defaultOptions = {}) {
+  const refinements = vue.computed(() => properties[refinementsKeys]);
+  const sortsKey = vue.computed(() => refinements.value.keys.sorts);
+  const filtersKey = vue.computed(() => refinements.value.keys.filters);
+  defaultOptions = {
+    replace: false,
+    ...defaultOptions
+  };
+  function getSort(name) {
+    return refinements.value.sorts.find((sort) => sort.name === name);
+  }
+  function getFilter(name) {
+    return refinements.value.filters.find((sort) => sort.name === name);
+  }
+  async function reset(options = {}) {
+    return await core.router.reload({
+      ...defaultOptions,
+      ...options,
+      data: {
+        [filtersKey.value]: void 0,
+        [sortsKey.value]: void 0
+      }
+    });
+  }
+  async function clearFilters(options = {}) {
+    return await core.router.reload({
+      ...defaultOptions,
+      ...options,
+      data: {
+        [filtersKey.value]: void 0
+      }
+    });
+  }
+  async function clearFilter(filter, options = {}) {
+    return await core.router.reload({
+      ...defaultOptions,
+      ...options,
+      data: {
+        [filtersKey.value]: {
+          [filter]: void 0
+        }
+      }
+    });
+  }
+  async function applyFilter(name, value, options = {}) {
+    const filter = getFilter(name);
+    if (!filter) {
+      console.warn(`[Refinement] Filter "${name} does not exist."`);
+      return;
+    }
+    if (["", null].includes(value) || value === filter.default) {
+      value = void 0;
+    }
+    return await core.router.reload({
+      ...defaultOptions,
+      ...options,
+      data: {
+        [filtersKey.value]: {
+          [name]: value
+        }
+      }
+    });
+  }
+  async function clearSorts(options = {}) {
+    return await core.router.reload({
+      ...defaultOptions,
+      ...options,
+      data: {
+        [sortsKey.value]: void 0
+      }
+    });
+  }
+  function currentSorts() {
+    return refinements.value.sorts.filter(({ is_active }) => is_active);
+  }
+  function currentFilters() {
+    return refinements.value.filters.filter(({ is_active }) => is_active);
+  }
+  function isSorting(name, direction) {
+    if (name) {
+      return currentSorts().some((sort) => sort.name === name && (direction ? sort.direction === direction : true));
+    }
+    return currentSorts().length !== 0;
+  }
+  function isFiltering(name) {
+    if (name) {
+      return currentFilters().some((filter) => filter.name === name);
+    }
+    return currentFilters().length !== 0;
+  }
+  async function toggleSort(name, options) {
+    const sort = getSort(name);
+    if (!sort) {
+      console.warn(`[Refinement] Sort "${name} does not exist."`);
+      return;
+    }
+    const next = options?.direction ? sort[options?.direction] : sort.next;
+    const sortData = next ? options?.sortData ?? {} : Object.fromEntries(Object.entries(options?.sortData ?? {}).map(([key, _]) => [key, void 0]));
+    return await core.router.reload({
+      ...defaultOptions,
+      ...options,
+      data: {
+        [sortsKey.value]: next || void 0,
+        ...sortData
+      }
+    });
+  }
+  function bindFilter(name, options = {}) {
+    const debounce = options.debounce ?? 250;
+    const refDebounce = options.syncDebounce ?? 250;
+    const transform = options?.transformValue ?? ((value) => value);
+    const watchFn = options?.watch ?? vue.watch;
+    const getFilterValue = () => transform(refinements.value.filters.find((f) => f.name === name)?.value);
+    const _ref = vue.ref(getFilterValue());
+    let _filterTimeout;
+    let _refTimeout;
+    vue.watch(() => refinements.value.filters.find((f) => f.name === name), (filter) => {
+      clearTimeout(_refTimeout);
+      _refTimeout = setTimeout(() => _ref.value = transform(filter?.value), refDebounce);
+    }, { deep: true });
+    watchFn(_ref, (value) => {
+      clearTimeout(_refTimeout);
+      clearTimeout(_filterTimeout);
+      _filterTimeout = setTimeout(() => {
+        clearTimeout(_refTimeout);
+        applyFilter(name, transform(value), options);
+      }, debounce);
+    });
+    return _ref;
+  }
+  return {
+    /**
+     * Binds a named filter to a ref, applying filters when it changes and updating the ref accordingly.
+     */
+    bindFilter,
+    /**
+     * Available filters.
+     */
+    filters: toReactive(refinements.value.filters.map((filter) => ({
+      ...filter,
+      /**
+       * Applies this filter.
+       */
+      apply: (value, options) => applyFilter(filter.name, value, options),
+      /**
+       * Clears this filter.
+       */
+      clear: (options) => clearFilter(filter.name, options)
+    }))),
+    /**
+     * Available sorts.
+     */
+    sorts: toReactive(refinements.value.sorts.map((sort) => ({
+      ...sort,
+      /**
+       * Toggles this sort.
+       */
+      toggle: (options) => toggleSort(sort.name, options),
+      /**
+       * Checks if this sort is active.
+       */
+      isSorting: (direction) => isSorting(sort.name, direction),
+      /**
+       * Clears this sort.
+       */
+      clear: (options) => clearSorts(options)
+    }))),
+    /**
+     * Gets a filter by name.
+     */
+    getFilter,
+    /**
+     * Gets a sort by name.
+     */
+    getSort,
+    /**
+     * Resets all filters and sorts.
+     */
+    reset,
+    /**
+     * Toggles the specified sort.
+     */
+    toggleSort,
+    /**
+     * Whether a sort is active.
+     */
+    isSorting,
+    /**
+     * Whether a filter is active.
+     */
+    isFiltering,
+    /**
+     * The current sorts.
+     */
+    currentSorts,
+    /**
+     * The current filters.
+     */
+    currentFilters,
+    /**
+     * Clears the given filter.
+     */
+    clearFilter,
+    /**
+     * Resets all sorts.
+     */
+    clearSorts,
+    /**
+     * Resets all filters.
+     */
+    clearFilters,
+    /**
+     * Applies the given filter.
+     */
+    applyFilter
+  };
+}
+
+function useRoute() {
+  const current = vue.ref(hybridly.router.current());
+  function matches(name, parameters) {
+    return hybridly.router.matches(vue.toValue(name), parameters);
+  }
+  registerHook("navigated", () => {
+    current.value = hybridly.router.current();
+  });
+  return {
+    current: vue.readonly(current),
+    matches
+  };
+}
+
+function useBulkSelect() {
+  const selection = vue.ref({
+    all: false,
+    only: /* @__PURE__ */ new Set(),
+    except: /* @__PURE__ */ new Set()
+  });
+  function selectAll() {
+    selection.value.all = true;
+    selection.value.only.clear();
+    selection.value.except.clear();
+  }
+  function deselectAll() {
+    selection.value.all = false;
+    selection.value.only.clear();
+    selection.value.except.clear();
+  }
+  function select(...records) {
+    records.forEach((record) => selection.value.except.delete(record));
+    records.forEach((record) => selection.value.only.add(record));
+  }
+  function deselect(...records) {
+    records.forEach((record) => selection.value.except.add(record));
+    records.forEach((record) => selection.value.only.delete(record));
+  }
+  function toggle(record, force) {
+    if (selected(record) || force === false) {
+      return deselect(record);
+    }
+    if (!selected(record) || force === true) {
+      return select(record);
+    }
+  }
+  function selected(record) {
+    if (selection.value.all) {
+      return !selection.value.except.has(record);
+    }
+    return selection.value.only.has(record);
+  }
+  const allSelected = vue.computed(() => {
+    return selection.value.all && selection.value.except.size === 0;
+  });
+  return {
+    allSelected,
+    selectAll,
+    deselectAll,
+    select,
+    deselect,
+    toggle,
+    selected,
+    selection
+  };
+}
+
+function useTable(props, key, defaultOptions = {}) {
+  const table = vue.computed(() => props[key]);
+  const bulk = useBulkSelect();
+  const refinements = useRefinements(toReactive(table), "refinements", defaultOptions);
+  function getRecordKey(record) {
+    if (typeof record !== "object") {
+      return record;
+    }
+    if (Reflect.has(record, "__hybridId")) {
+      return Reflect.get(record, "__hybridId");
+    }
+    return Reflect.get(record, table.value.keyName);
+  }
+  function getActionName(action) {
+    return typeof action === "string" ? action : action.name;
+  }
+  async function executeInlineAction(action, record) {
+    return await hybridly.router.navigate({
+      method: "post",
+      url: hybridly.route(table.value.endpoint),
+      preserveState: true,
+      data: {
+        type: "action:inline",
+        action: getActionName(action),
+        tableId: table.value.id,
+        recordId: getRecordKey(record)
+      }
+    });
+  }
+  async function executeBulkAction(action, options) {
+    const actionName = getActionName(action);
+    return await hybridly.router.navigate({
+      method: "post",
+      url: hybridly.route(table.value.endpoint),
+      preserveState: true,
+      data: {
+        type: "action:bulk",
+        action: actionName,
+        tableId: table.value.id,
+        all: bulk.selection.value.all,
+        only: [...bulk.selection.value.only],
+        except: [...bulk.selection.value.except]
+      },
+      hooks: {
+        after: () => {
+          if (options?.deselect === true || table.value.bulkActions.find(({ name }) => name === actionName)?.deselect !== false) {
+            bulk.deselectAll();
+          }
+        }
+      }
+    });
+  }
+  return vue.reactive({
+    /** Selects all records. */
+    selectAll: bulk.selectAll,
+    /** Deselects all records. */
+    deselectAll: bulk.deselectAll,
+    /** Checks if the given record is selected. */
+    isSelected: (record) => bulk.selected(getRecordKey(record)),
+    /** Whether all records are selected. */
+    allSelected: bulk.allSelected,
+    /** The current record selection. */
+    selection: bulk.selection,
+    /** Toggles selection for the given record. */
+    toggle: (record) => bulk.toggle(getRecordKey(record)),
+    /** Selects selection for the given record. */
+    select: (record) => bulk.select(getRecordKey(record)),
+    /** Deselects selection for the given record. */
+    deselect: (record) => bulk.deselect(getRecordKey(record)),
+    /** List of inline actions for this table. */
+    inlineActions: vue.computed(() => table.value.inlineActions.map((action) => ({
+      /** Executes the action. */
+      execute: (record) => executeInlineAction(action.name, record),
+      ...action
+    }))),
+    /** List of bulk actions for this table. */
+    bulkActions: vue.computed(() => table.value.bulkActions.map((action) => ({
+      /** Executes the action. */
+      execute: (options) => executeBulkAction(action.name, options),
+      ...action
+    }))),
+    /** Executes the given inline action for the given record. */
+    executeInlineAction,
+    /** Executes the given bulk action. */
+    executeBulkAction,
+    /** List of columns for this table. */
+    columns: vue.computed(() => table.value.columns.map((column) => ({
+      ...column,
+      /** Toggles sorting for this column. */
+      toggleSort: (options) => refinements.toggleSort(column.name, options),
+      /** Checks whether the column is being sorted. */
+      isSorting: (direction) => refinements.isSorting(column.name, direction),
+      /** Applies the filer for this column. */
+      applyFilter: (value, options) => refinements.applyFilter(column.name, value, options),
+      /** Clears the filter for this column. */
+      clearFilter: (options) => refinements.clearFilter(column.name, options),
+      /** Checks whether the column is sortable. */
+      isSortable: refinements.sorts.find((sort) => sort.name === column.name),
+      /** Checks whether the column is filterable. */
+      isFilterable: refinements.filters.find((filters) => filters.name === column.name)
+    }))),
+    /** List of records for this table. */
+    records: vue.computed(() => table.value.records.map((record) => ({
+      /** The actual record. */
+      record,
+      /** The key of the record. Use this instead of `id`. */
+      key: getRecordKey(record),
+      /** Executes the given inline action. */
+      execute: (action) => executeInlineAction(getActionName(action), getRecordKey(record)),
+      /** Gets the available inline actions. */
+      actions: table.value.inlineActions.map((action) => ({
+        ...action,
+        /** Executes the action. */
+        execute: () => executeInlineAction(action.name, getRecordKey(record))
+      })),
+      /** Selects this record. */
+      select: () => bulk.select(getRecordKey(record)),
+      /** Deselects this record. */
+      deselect: () => bulk.deselect(getRecordKey(record)),
+      /** Toggles the selection for this record. */
+      toggle: (force) => bulk.toggle(getRecordKey(record), force),
+      /** Checks whether this record is selected. */
+      selected: bulk.selected(getRecordKey(record)),
+      /** Gets the value of the record for the specified column. */
+      value: (column) => record[typeof column === "string" ? column : column.name]
+    }))),
+    /**
+     * Paginated meta and links.
+     */
+    paginator: vue.computed(() => table.value.paginator),
+    ...refinements
+  });
+}
+
+function useQueryParameters() {
+  const state = vue.reactive({});
+  function updateState() {
+    const params = new URLSearchParams(window.location.search);
+    const unusedKeys = new Set(Object.keys(state));
+    for (const key of params.keys()) {
+      const paramsForKey = params.getAll(key);
+      state[key] = paramsForKey.length > 1 ? paramsForKey : params.get(key) || "";
+      unusedKeys.delete(key);
+    }
+    Array.from(unusedKeys).forEach((key) => delete state[key]);
+  }
+  updateState();
+  hybridly.registerHook("after", updateState);
+  return state;
+}
+
+exports.can = core.can;
+exports.route = core.route;
+exports.router = core.router;
+exports.RouterLink = RouterLink;
+exports.defineLayout = defineLayout;
+exports.defineLayoutProperties = defineLayoutProperties;
+exports.initializeHybridly = initializeHybridly;
+exports.registerHook = registerHook;
+exports.setProperty = setProperty;
+exports.useBackForward = useBackForward;
+exports.useBulkSelect = useBulkSelect;
+exports.useContext = useContext;
+exports.useDialog = useDialog;
+exports.useForm = useForm;
+exports.useHistoryState = useHistoryState;
+exports.useProperties = useProperties;
+exports.useProperty = useProperty;
+exports.useQueryParameters = useQueryParameters;
+exports.useRefinements = useRefinements;
+exports.useRoute = useRoute;
+exports.useTable = useTable;

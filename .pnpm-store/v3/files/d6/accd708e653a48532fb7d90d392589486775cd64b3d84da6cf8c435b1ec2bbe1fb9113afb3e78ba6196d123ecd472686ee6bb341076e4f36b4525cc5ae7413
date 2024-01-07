@@ -1,0 +1,1245 @@
+import * as vue from 'vue';
+import { App, Plugin as Plugin$2, h, PropType, ComputedRef, DeepReadonly, Ref, MaybeRefOrGetter } from 'vue';
+import * as _hybridly_core from '@hybridly/core';
+import { RouterContextOptions, Plugin as Plugin$1, RouterContext, Method as Method$1, HybridRequestOptions as HybridRequestOptions$1, UrlResolvable as UrlResolvable$1, registerHook as registerHook$1 } from '@hybridly/core';
+export { can, route, router } from '@hybridly/core';
+import { Axios, AxiosResponse, AxiosProgressEvent } from 'axios';
+import * as _vue_shared from '@vue/shared';
+import { RequestData, FormDataConvertible } from '@hybridly/utils';
+import { SearchableObject, Path, PathValue } from '@clickbar/dot-diver';
+import * as hybridly from 'hybridly';
+
+interface ProgressOptions {
+    /**
+     * The delay after which the progress bar will
+     * appear during navigation, in milliseconds.
+     *
+     * @default 250
+     */
+    delay: number;
+    /**
+     * The color of the progress bar.
+     *
+     * Defaults to #29d.
+     */
+    color: string;
+    /**
+     * Whether to include the default NProgress styles.
+     *
+     * Defaults to true.
+     */
+    includeCSS: boolean;
+    /**
+     * Whether the NProgress spinner will be shown.
+     *
+     * Defaults to false.
+     */
+    spinner: boolean;
+}
+
+/**
+ * Initializes Hybridly's router and context.
+ */
+declare function initializeHybridly(options?: InitializeOptions): Promise<any>;
+interface InitializeOptions {
+    /** Callback that gets executed before Vue is mounted. */
+    enhanceVue?: (vue: App<Element>) => any;
+    /** ID of the app element. */
+    id?: string;
+    /** Clean up the host element's payload dataset after loading. */
+    cleanup?: boolean;
+    /** Whether to set up the devtools plugin. */
+    devtools?: boolean;
+    /** Whether to display response error modals. */
+    responseErrorModals?: boolean;
+    /** Custom history state serialization functions. */
+    serializer?: RouterContextOptions['serializer'];
+    /** Progressbar options. */
+    progress?: false | Partial<ProgressOptions>;
+    /** Sets up the hybridly router. */
+    setup?: (options: SetupArguments) => any;
+    /** List of Hybridly plugins. */
+    plugins?: Plugin$1[];
+    /** Custom Axios instance. */
+    axios?: Axios;
+    /**
+     * Enables the View Transition API, if supported.
+     * @see https://developer.mozilla.org/en-US/docs/Web/API/ViewTransition
+     */
+    viewTransition?: boolean;
+}
+interface SetupArguments {
+    /** DOM element to mount Vue on. */
+    element: Element;
+    /** Hybridly wrapper component. */
+    wrapper: any;
+    /** Hybridly wrapper component properties. */
+    props: {
+        context: RouterContext;
+    };
+    /** Vue plugin that registers the devtools. */
+    hybridly: Plugin$2;
+    /** Renders the wrapper. */
+    render: () => ReturnType<typeof h>;
+}
+
+declare const RouterLink: vue.DefineComponent<{
+    href: {
+        type: StringConstructor;
+        required: false;
+        default: undefined;
+    };
+    as: {
+        type: (ObjectConstructor | StringConstructor)[];
+        default: string;
+    };
+    method: {
+        type: PropType<"delete" | Method$1 | "get" | "post" | "put" | "patch">;
+        default: string;
+    };
+    data: {
+        type: PropType<RequestData>;
+        default: () => {};
+    };
+    external: {
+        type: BooleanConstructor;
+        default: boolean;
+    };
+    disabled: {
+        type: BooleanConstructor;
+        default: boolean;
+    };
+    options: {
+        type: PropType<Omit<HybridRequestOptions$1, "data" | "url" | "method">>;
+        default: () => {};
+    };
+    text: {
+        type: StringConstructor;
+        required: false;
+        default: undefined;
+    };
+    preload: {
+        type: PropType<boolean | "hover" | "mount">;
+        default: boolean;
+    };
+    preserveScroll: {
+        type: BooleanConstructor;
+        default: undefined;
+    };
+    preserveState: {
+        type: BooleanConstructor;
+        default: undefined;
+    };
+}, (props: _vue_shared.LooseRequired<{
+    readonly data: RequestData;
+    readonly method: "delete" | Method$1 | "get" | "post" | "put" | "patch";
+    readonly options: Omit<HybridRequestOptions$1, "data" | "url" | "method">;
+    readonly as: string | Record<string, any>;
+    readonly external: boolean;
+    readonly disabled: boolean;
+    readonly preload: boolean | "hover" | "mount";
+    readonly text?: string | undefined;
+    readonly preserveScroll?: boolean | undefined;
+    readonly preserveState?: boolean | undefined;
+    readonly href?: string | undefined;
+} & {}>) => vue.VNode<vue.RendererNode, vue.RendererElement, {
+    [key: string]: any;
+}>, unknown, {}, {}, vue.ComponentOptionsMixin, vue.ComponentOptionsMixin, {}, string, vue.VNodeProps & vue.AllowedComponentProps & vue.ComponentCustomProps, Readonly<vue.ExtractPropTypes<{
+    href: {
+        type: StringConstructor;
+        required: false;
+        default: undefined;
+    };
+    as: {
+        type: (ObjectConstructor | StringConstructor)[];
+        default: string;
+    };
+    method: {
+        type: PropType<"delete" | Method$1 | "get" | "post" | "put" | "patch">;
+        default: string;
+    };
+    data: {
+        type: PropType<RequestData>;
+        default: () => {};
+    };
+    external: {
+        type: BooleanConstructor;
+        default: boolean;
+    };
+    disabled: {
+        type: BooleanConstructor;
+        default: boolean;
+    };
+    options: {
+        type: PropType<Omit<HybridRequestOptions$1, "data" | "url" | "method">>;
+        default: () => {};
+    };
+    text: {
+        type: StringConstructor;
+        required: false;
+        default: undefined;
+    };
+    preload: {
+        type: PropType<boolean | "hover" | "mount">;
+        default: boolean;
+    };
+    preserveScroll: {
+        type: BooleanConstructor;
+        default: undefined;
+    };
+    preserveState: {
+        type: BooleanConstructor;
+        default: undefined;
+    };
+}>>, {
+    data: RequestData;
+    text: string;
+    preserveScroll: boolean;
+    preserveState: boolean;
+    href: string;
+    method: "delete" | Method$1 | "get" | "post" | "put" | "patch";
+    options: Omit<HybridRequestOptions$1, "data" | "url" | "method">;
+    as: string | Record<string, any>;
+    external: boolean;
+    disabled: boolean;
+    preload: boolean | "hover" | "mount";
+}, {}>;
+
+/** Accesses all current properties. */
+declare function useProperties<T extends object, Global extends GlobalHybridlyProperties = GlobalHybridlyProperties>(): vue.DeepReadonly<vue.UnwrapNestedRefs<T & Global>>;
+/** Accesses a property with a dot notation. */
+declare function useProperty<Override = never, T extends SearchableObject = GlobalHybridlyProperties, P extends Path<T> & string = Path<T> & string, ReturnType = [Override] extends [never] ? PathValue<T, P> : Override>(path: [Override] extends [never] ? P : string): ComputedRef<ReturnType>;
+/**
+ * Sets the property at the given path to the given value.
+ * Note: this helper is experimental and may change in the future.
+ */
+declare function setProperty<Override = never, T extends SearchableObject = GlobalHybridlyProperties, P extends Path<T> & string = Path<T> & string, ValueType = [Override] extends [never] ? PathValue<T, P> : Override>(path: [Override] extends [never] ? P : string, value: ValueType): void;
+
+type UrlResolvable = string | URL | Location;
+type UrlTransformable = BaseUrlTransformable | ((string: URL) => BaseUrlTransformable);
+type BaseUrlTransformable = Partial<Omit<URL, 'searchParams' | 'toJSON' | 'toString'>> & {
+    query?: any;
+    trailingSlash?: boolean;
+};
+
+type MaybePromise<T> = T | Promise<T>;
+
+interface RequestHooks {
+    /**
+         * Called before a navigation request is going to happen.
+         */
+    before: (options: HybridRequestOptions, context: InternalRouterContext) => MaybePromise<any | boolean>;
+    /**
+     * Called before the request of a navigation is going to happen.
+     */
+    start: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when progress on the request is being made.
+     */
+    progress: (progress: Progress, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when data is received after a request for a navigation.
+     */
+    data: (response: AxiosResponse, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a request is successful and there is no error.
+     */
+    success: (payload: HybridPayload, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a request is successful but there were errors.
+     */
+    error: (errors: Errors$1, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a request has been aborted.
+     */
+    abort: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a response to a request is not a valid hybrid response.
+     */
+    invalid: (response: AxiosResponse, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when an unknowne exception was triggered.
+     */
+    exception: (error: Error, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called whenever the request failed, for any reason, in addition to other hooks.
+     */
+    fail: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called after a request has been made, even if it didn't succeed.
+     */
+    after: (context: InternalRouterContext) => MaybePromise<any>;
+}
+interface Hooks extends RequestHooks {
+    /**
+         * Called when Hybridly's context is initialized.
+         */
+    initialized: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called after Hybridly's initial load.
+     */
+    ready: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a back-forward navigation occurs.
+     */
+    backForward: (state: any, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a component navigation is being made.
+     */
+    navigating: (options: InternalNavigationOptions, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a component has been navigated to.
+     */
+    navigated: (options: InternalNavigationOptions, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a component has been navigated to and was mounted by the adapter.
+     */
+    mounted: (options: InternalNavigationOptions & MountedHookOptions, context: InternalRouterContext) => MaybePromise<any>;
+}
+interface MountedHookOptions {
+    /**
+     * Whether the component being mounted is a dialog.
+     */
+    isDialog: boolean;
+}
+
+interface RoutingConfiguration {
+    url: string;
+    port?: number;
+    defaults: Record<string, any>;
+    routes: Record<string, RouteDefinition>;
+}
+interface RouteDefinition {
+    uri: string;
+    method: Method[];
+    bindings: Record<string, string>;
+    domain?: string;
+    wheres?: Record<string, string>;
+    name: string;
+}
+
+type ConditionalNavigationOption<T extends boolean | string> = T | ((payload: NavigationOptions) => T);
+interface NavigationOptions {
+    /** View to navigate to. */
+    payload?: HybridPayload;
+    /**
+     * Whether to replace the current history state instead of adding
+     * one. This affects the browser's "back" and "forward" features.
+     */
+    replace?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the scrollbars positions on the view. */
+    preserveScroll?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the current view component's state. */
+    preserveState?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the current URL. */
+    preserveUrl?: ConditionalNavigationOption<boolean>;
+    /**
+     * Properties of the given URL to override.
+     * @example
+     * ```ts
+     * router.get('/login?redirect=/', {
+     * 	transformUrl: { search: '' }
+     * }
+     * ```
+     */
+    transformUrl?: UrlTransformable;
+    /**
+     * Defines whether the history state should be updated.
+     * @internal This is an advanced property meant to be used internally.
+     */
+    updateHistoryState?: boolean;
+}
+interface InternalNavigationOptions extends NavigationOptions {
+    /**
+     * Defines the kind of navigation being performed.
+     * - initial: the initial load's navigation
+     * - server: a navigation initiated by a server round-trip
+     * - local: a navigation initiated by `router.local`
+     * - back-forward: a navigation initiated by the browser's `popstate` event
+     * @internal
+     */
+    type: 'initial' | 'local' | 'back-forward' | 'server';
+    /**
+     * Defines whether this navigation opens a dialog.
+     * @internal
+     */
+    hasDialog?: boolean;
+}
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+interface HybridRequestOptions extends Omit<NavigationOptions, 'payload'> {
+    /** The URL to navigation. */
+    url?: UrlResolvable;
+    /** HTTP verb to use for the request. */
+    method?: Method | Lowercase<Method>;
+    /** Body of the request. */
+    data?: RequestData;
+    /** Which properties to update for this navigation. Other properties will be ignored. */
+    only?: string | string[];
+    /** Which properties not to update for this navigation. Other properties will be updated. */
+    except?: string | string[];
+    /** Specific headers to add to the request. */
+    headers?: Record<string, string>;
+    /** The bag in which to put potential errors. */
+    errorBag?: string;
+    /** Hooks for this navigation. */
+    hooks?: Partial<RequestHooks>;
+    /** If `true`, force the usage of a `FormData` object. */
+    useFormData?: boolean;
+    /**
+     * If `false`, disable automatic form spoofing.
+     * @see https://laravel.com/docs/9.x/routing#form-method-spoofing
+     */
+    spoof?: boolean;
+    /**
+     * If `false`, does not trigger the progress bar for this request.
+     */
+    progress?: boolean;
+}
+/** A navigation being made. */
+interface PendingNavigation {
+    /** The URL to which the request is being made. */
+    url: URL;
+    /** Abort controller associated to this request. */
+    controller: AbortController;
+    /** Options for the associated hybrid request. */
+    options: HybridRequestOptions;
+    /** Navigation identifier. */
+    id: string;
+    /** Current status. */
+    status: 'pending' | 'success' | 'error';
+}
+/** A view or dialog component. */
+interface View {
+    /** Name of the component to use. */
+    component?: string;
+    /** Properties to apply to the component. */
+    properties: Properties;
+    /** Deferred properties for this view. */
+    deferred: string[];
+}
+interface Dialog extends Required<View> {
+    /** URL that is the base background view when navigating to the dialog directly. */
+    baseUrl: string;
+    /** URL to which the dialog should redirect when closed. */
+    redirectUrl: string;
+    /** Unique identifier for this modal's lifecycle. */
+    key: string;
+}
+type Property = null | string | number | boolean | Property[] | {
+    [name: string]: Property;
+};
+type Properties = Record<string | number, Property>;
+interface SwapOptions<T> {
+    /** The new component. */
+    component: T;
+    /** The new properties. */
+    properties?: any;
+    /** Whether to preserve the state of the component. */
+    preserveState?: boolean;
+    /** Current dialog. */
+    dialog?: Dialog;
+    /** On mounted callback. */
+    onMounted?: (options: MountedHookOptions) => void;
+}
+type ViewComponent = any;
+type ResolveComponent = (name: string) => Promise<ViewComponent>;
+type SwapView = (options: SwapOptions<ViewComponent>) => Promise<void>;
+/** The payload of a navigation request from the server. */
+interface HybridPayload {
+    /** The view to use in this request. */
+    view: View;
+    /** An optional dialog. */
+    dialog?: Dialog;
+    /** The current page URL. */
+    url: string;
+    /** The current asset version. */
+    version: string;
+}
+interface Progress {
+    /** Base event. */
+    event: AxiosProgressEvent;
+    /** Computed percentage. */
+    percentage: Readonly<number>;
+}
+type Errors$1 = any;
+
+interface Plugin extends Partial<Hooks> {
+    /** Identifier of the plugin. */
+    name: string;
+}
+
+/** Router context. */
+interface InternalRouterContext {
+    /** The current, normalized URL. */
+    url: string;
+    /** The current view. */
+    view: View;
+    /** The current, optional dialog. */
+    dialog?: Dialog;
+    /** The current local asset version. */
+    version: string;
+    /** The current adapter's functions. */
+    adapter: ResolvedAdapter;
+    /** Scroll positions of the current page's DOM elements. */
+    scrollRegions: ScrollRegion[];
+    /** Arbitrary state. */
+    memo: Record<string, any>;
+    /** Currently pending navigation. */
+    pendingNavigation?: PendingNavigation;
+    /** History state serializer. */
+    serializer: Serializer;
+    /** List of plugins. */
+    plugins: Plugin[];
+    /** Global hooks. */
+    hooks: Partial<Record<keyof Hooks, Array<Function>>>;
+    /** The Axios instance. */
+    axios: Axios;
+    /** Routing configuration. */
+    routing?: RoutingConfiguration;
+    /** Whether to display response error modals. */
+    responseErrorModals?: boolean;
+    /** Cache of preload requests. */
+    preloadCache: Map<string, AxiosResponse>;
+}
+/** Adapter-specific functions. */
+interface Adapter {
+    /** Resolves a component from the given name. */
+    resolveComponent: ResolveComponent;
+    /** Called when the view is swapped. */
+    onViewSwap: SwapView;
+    /** Called when the context is updated. */
+    onContextUpdate?: (context: InternalRouterContext) => void;
+    /** Called when a dialog is closed. */
+    onDialogClose?: (context: InternalRouterContext) => void;
+    /** Called when Hybridly is waiting for a component to be mounted. The given callback should be executed after the view component is mounted. */
+    executeOnMounted: (callback: Function) => void;
+}
+interface ResolvedAdapter extends Adapter {
+    updateRoutingConfiguration: (routing?: RoutingConfiguration) => void;
+}
+interface ScrollRegion {
+    top: number;
+    left: number;
+}
+/** Provides methods to serialize the state into the history state. */
+interface Serializer {
+    serialize: <T>(view: T) => string;
+    unserialize: <T>(state?: string) => T | undefined;
+}
+
+/** Accesses the hybridly context. */
+declare function useContext(): vue.ComputedRef<Readonly<InternalRouterContext> | undefined>;
+
+type Errors<T extends SearchableObject> = {
+    [K in keyof T]?: T[K] extends Record<string, any> ? Errors<T[K]> : string;
+};
+interface FormOptions<T extends SearchableObject> extends Omit<HybridRequestOptions$1, 'data' | 'url'> {
+    fields: T;
+    url?: UrlResolvable$1 | (() => UrlResolvable$1);
+    key?: string | false;
+    /**
+     * Defines the delay after which the `recentlySuccessful` and `recentlyFailed` variables are reset to `false`.
+     */
+    timeout?: number;
+    /**
+     * Resets the fields of the form to their initial value after a successful submission.
+     * @default true
+     */
+    reset?: boolean;
+    /**
+     * Updates the initial values from the form after a successful submission.
+     * @default false
+     */
+    updateInitials?: boolean;
+    /**
+     * Callback executed before the form submission for transforming the fields.
+     */
+    transform?: (fields: T) => any;
+}
+declare function useForm<T extends SearchableObject, P extends Path<T> & string = Path<T> & string>(options: FormOptions<T>): {
+    reset: (...keys: P[]) => void;
+    clear: (...keys: P[]) => void;
+    fields: vue.UnwrapRef<T>;
+    abort: () => void;
+    setErrors: (incoming: Errors<T>) => void;
+    clearErrors: (...keys: P[]) => void;
+    clearError: (key: P) => void;
+    setInitial: (newInitial: Partial<T>) => void;
+    hasDirty: (...keys: P[]) => boolean;
+    submitWith: (optionsOverrides?: Omit<HybridRequestOptions$1, 'data'>) => Promise<_hybridly_core.NavigationResponse>;
+    submitWithOptions: (optionsOverrides?: Omit<HybridRequestOptions$1, 'data'>) => Promise<_hybridly_core.NavigationResponse>;
+    submit: () => Promise<_hybridly_core.NavigationResponse>;
+    hasErrors: boolean;
+    initial: vue.UnwrapRef<DeepReadonly<T>>;
+    loaded: any;
+    progress: {
+        readonly event: {
+            readonly loaded: number;
+            readonly total?: number | undefined;
+            readonly progress?: number | undefined;
+            readonly bytes: number;
+            readonly rate?: number | undefined;
+            readonly estimated?: number | undefined;
+            readonly upload?: boolean | undefined;
+            readonly download?: boolean | undefined;
+            readonly event?: any;
+        };
+        readonly percentage: number;
+    } | undefined;
+    isDirty: boolean;
+    errors: DeepReadonly<vue.UnwrapRef<Errors<T>>>;
+    processing: boolean;
+    successful: boolean;
+    failed: boolean;
+    recentlySuccessful: boolean;
+    recentlyFailed: boolean;
+};
+
+/**
+ * Returns a ref with a value saved in the history state through Hybridly.
+ * The state is linked to a specific browser history entry.
+ */
+declare function useHistoryState<T = any>(key: string, initial: T): vue.Ref<vue.UnwrapRef<T>>;
+
+type BackForwardCallback = (context: RouterContext) => void;
+declare function useBackForward(): {
+    onBackForward: (fn: BackForwardCallback) => void;
+    reloadOnBackForward: (options?: HybridRequestOptions$1) => void;
+};
+
+declare global {
+    /**
+     * Paginated data with metadata in a `meta` wrap.
+     */
+    interface Paginator<T = any> {
+        data: T[];
+        meta: PaginatorMeta;
+        links: PaginatorLink[];
+    }
+    /**
+     * Simple-paginated data with metadata in a `meta` wrap.
+     */
+    interface SimplePaginator<T = any> {
+        data: T[];
+        meta: SimplePaginatorMeta;
+    }
+    /**
+     * Cursor paginator.
+     */
+    interface CursorPaginator<T = any> {
+        data: T[];
+        meta: CursorPaginatorMeta;
+    }
+    /**
+     * Paginated data without metadata wrapping.
+     */
+    interface UnwrappedPaginator<T = any> extends PaginatorMeta {
+        data: T[];
+        links: PaginatorLink[];
+    }
+}
+interface PaginatorLink {
+    url?: string;
+    label: string;
+    active: boolean;
+}
+interface CursorPaginatorMeta {
+    path: string;
+    per_page: number;
+    previous_cursor: string;
+    next_cursor: string;
+    next_page_url?: string;
+    previous_page_url?: string;
+}
+interface SimplePaginatorMeta {
+    path: string;
+    per_page: number;
+    current_page: number;
+    next_page_url?: string;
+    first_page_url: string;
+    prev_page_url?: string;
+    from: number;
+    to: number;
+}
+interface PaginatorMeta {
+    path: string;
+    from: number;
+    to: number;
+    total: number;
+    per_page: number;
+    current_page: number;
+    first_page: number;
+    last_page: number;
+    first_page_url: string;
+    last_page_url: string;
+    next_page_url?: string;
+    prev_page_url?: string;
+}
+
+type Layout = any;
+/**
+ * Sets the persistent layout for this view.
+ */
+declare function defineLayout<T extends Record<string, K>, K = any>(layout: Layout, properties?: T): void;
+declare function defineLayout(layouts: Layout[]): void;
+/**
+ * Sets or gets the properties for the current persistent layout.
+ */
+declare function defineLayoutProperties<T extends Record<string, K>, K = any>(properties: T): void;
+
+/**
+ * Registers a global hook.
+ * If called inside a component, unregisters after the component is unmounted.
+ */
+declare const registerHook: typeof registerHook$1;
+
+/**
+ * Exposes utilities related to the dialogs.
+ */
+declare function useDialog(): {
+    /** Closes the dialog. */
+    close: () => void;
+    /** Closes the dialog without a server round-trip. */
+    closeLocally: () => void;
+    /** Unmounts the dialog. Should be called after its closing animations. */
+    unmount: () => void;
+    /** Whether the dialog is shown. */
+    show: vue.ComputedRef<boolean | undefined>;
+    /** Properties of the dialog. */
+    properties: vue.ComputedRef<Properties | undefined>;
+};
+
+type SortDirection = 'asc' | 'desc';
+type AvailableHybridRequestOptions = Omit<HybridRequestOptions$1, 'url' | 'data'>;
+interface ToggleSortOptions extends AvailableHybridRequestOptions {
+    direction?: SortDirection;
+    /** Additional sort data, only applied when sorting. */
+    sortData?: {
+        [key: string]: FormDataConvertible;
+    };
+}
+interface BindFilterOptions<T> extends AvailableHybridRequestOptions {
+    transformValue?: (value?: T) => any;
+    /** If specified, this callback will watch the ref and apply  */
+    watch?: (ref: Ref<T>, cb: any) => void;
+    /**
+     * The debounce time in milliseconds for updating this filter.
+     * @default 250ms
+     */
+    debounce?: number;
+    /**
+     * The debounce time in milliseconds for updating the ref.
+     * @default 250ms
+     */
+    syncDebounce?: number;
+}
+declare global {
+    interface FilterRefinement {
+        /**
+         * Whether this filter is currently active.
+         */
+        is_active: boolean;
+        /**
+         * The type of this filter.
+         */
+        type: 'trashed' | 'callback' | 'exact' | 'similar:loose' | 'similar:begins_with_strict' | 'similar:ends_with_strict' | string;
+        /**
+         * The label of the filter.
+         */
+        label: string;
+        /**
+         * The metadata attributes of the filter.
+         */
+        metadata: Record<string, any>;
+        /**
+         * The name of the fitler.
+         */
+        name: string;
+        /**
+         * The current value of the filter.
+         */
+        value: any;
+        /**
+         * Whether this filter is hidden.
+         */
+        hidden: boolean;
+        /**
+         * The default value of the filter.
+         */
+        default: any;
+    }
+    interface SortRefinement {
+        /**
+         * Whether this sort is currently active.
+         */
+        is_active: boolean;
+        /**
+         * The current direction of the sort.
+         */
+        direction?: SortDirection;
+        /**
+         * The default direction of the sort.
+         */
+        default?: SortDirection;
+        /**
+         * The label of the sort.
+         */
+        label: string;
+        /**
+         * The metadata attributes of the sort.
+         */
+        metadata: Record<string, any>;
+        /**
+         * The name of the sort.
+         */
+        name: string;
+        /**
+         * The value corresponding to the descending sort.
+         */
+        desc: string;
+        /**
+         * The value corresponding to the ascending sort.
+         */
+        asc: string;
+        /**
+         * The value that will be applied on toggle.
+         */
+        next: string;
+        /**
+         * Whether this sort is hidden.
+         */
+        hidden: boolean;
+    }
+    interface Refinements {
+        /**
+         * The list of available filters.
+         */
+        filters: Array<FilterRefinement>;
+        /**
+         * The list of available sorts.
+         */
+        sorts: Array<SortRefinement>;
+        /**
+         * The URL scope for these refinements.
+         */
+        scope?: string;
+        /**
+         * The scope keys for these refinements.
+         */
+        keys: {
+            /**
+             * The scope key for sorting.
+             */
+            sorts: string;
+            /**
+             * The scope key for filtering.
+             */
+            filters: string;
+        };
+    }
+}
+declare function useRefinements<Properties extends object, RefinementsKey extends {
+    [K in keyof Properties]: Properties[K] extends Refinements ? K : never;
+}[keyof Properties]>(properties: Properties, refinementsKeys: RefinementsKey, defaultOptions?: AvailableHybridRequestOptions): {
+    /**
+     * Binds a named filter to a ref, applying filters when it changes and updating the ref accordingly.
+     */
+    bindFilter: <T = any>(name: string, options?: BindFilterOptions<T>) => Ref<T>;
+    /**
+     * Available filters.
+     */
+    filters: {
+        /**
+         * Applies this filter.
+         */
+        apply: (value: any, options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse | undefined>;
+        /**
+         * Clears this filter.
+         */
+        clear: (options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse>;
+        /**
+         * Whether this filter is currently active.
+         */
+        is_active: boolean;
+        /**
+         * The type of this filter.
+         */
+        type: string;
+        /**
+         * The label of the filter.
+         */
+        label: string;
+        /**
+         * The metadata attributes of the filter.
+         */
+        metadata: Record<string, any>;
+        /**
+         * The name of the fitler.
+         */
+        name: string;
+        /**
+         * The current value of the filter.
+         */
+        value: any;
+        /**
+         * Whether this filter is hidden.
+         */
+        hidden: boolean;
+        /**
+         * The default value of the filter.
+         */
+        default: any;
+    }[];
+    /**
+     * Available sorts.
+     */
+    sorts: {
+        /**
+         * Toggles this sort.
+         */
+        toggle: (options?: ToggleSortOptions) => Promise<_hybridly_core.NavigationResponse | undefined>;
+        /**
+         * Checks if this sort is active.
+         */
+        isSorting: (direction?: SortDirection) => boolean;
+        /**
+         * Clears this sort.
+         */
+        clear: (options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse>;
+        /**
+         * Whether this sort is currently active.
+         */
+        is_active: boolean;
+        /**
+         * The current direction of the sort.
+         */
+        direction?: SortDirection | undefined;
+        /**
+         * The default direction of the sort.
+         */
+        default?: SortDirection | undefined;
+        /**
+         * The label of the sort.
+         */
+        label: string;
+        /**
+         * The metadata attributes of the sort.
+         */
+        metadata: Record<string, any>;
+        /**
+         * The name of the sort.
+         */
+        name: string;
+        /**
+         * The value corresponding to the descending sort.
+         */
+        desc: string;
+        /**
+         * The value corresponding to the ascending sort.
+         */
+        asc: string;
+        /**
+         * The value that will be applied on toggle.
+         */
+        next: string;
+        /**
+         * Whether this sort is hidden.
+         */
+        hidden: boolean;
+    }[];
+    /**
+     * Gets a filter by name.
+     */
+    getFilter: (name: string) => FilterRefinement | undefined;
+    /**
+     * Gets a sort by name.
+     */
+    getSort: (name: string) => SortRefinement | undefined;
+    /**
+     * Resets all filters and sorts.
+     */
+    reset: (options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse>;
+    /**
+     * Toggles the specified sort.
+     */
+    toggleSort: (name: string, options?: ToggleSortOptions) => Promise<_hybridly_core.NavigationResponse | undefined>;
+    /**
+     * Whether a sort is active.
+     */
+    isSorting: (name?: string, direction?: SortDirection) => boolean;
+    /**
+     * Whether a filter is active.
+     */
+    isFiltering: (name?: string) => boolean;
+    /**
+     * The current sorts.
+     */
+    currentSorts: () => Array<SortRefinement>;
+    /**
+     * The current filters.
+     */
+    currentFilters: () => Array<FilterRefinement>;
+    /**
+     * Clears the given filter.
+     */
+    clearFilter: (filter: string, options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse>;
+    /**
+     * Resets all sorts.
+     */
+    clearSorts: (options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse>;
+    /**
+     * Resets all filters.
+     */
+    clearFilters: (options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse>;
+    /**
+     * Applies the given filter.
+     */
+    applyFilter: (name: string, value: any, options?: AvailableHybridRequestOptions) => Promise<_hybridly_core.NavigationResponse | undefined>;
+};
+
+declare function useRoute(): {
+    current: Readonly<vue.Ref<string | undefined>>;
+    matches: <T extends string>(name: MaybeRefOrGetter<T>, parameters?: Record<string, any> | undefined) => boolean;
+};
+
+interface BulkSelection<T = any> {
+    /** Whether all records are selected. */
+    all: boolean;
+    /** Included records. */
+    only: Set<T>;
+    /** Excluded records. */
+    except: Set<T>;
+}
+declare function useBulkSelect<T = any>(): {
+    allSelected: vue.ComputedRef<boolean>;
+    selectAll: () => void;
+    deselectAll: () => void;
+    select: (...records: T[]) => void;
+    deselect: (...records: T[]) => void;
+    toggle: (record: T, force?: boolean) => void;
+    selected: (record: T) => boolean;
+    selection: vue.Ref<{
+        all: boolean;
+        only: Set<T>;
+        except: Set<T>;
+    }>;
+};
+
+declare global {
+    interface Table<T extends Record<string, any> = any, PaginatorKind extends 'cursor' | 'length-aware' | 'simple' = 'length-aware'> {
+        id: string;
+        keyName: string;
+        scope?: string;
+        columns: Column<T>[];
+        inlineActions: InlineAction[];
+        bulkActions: BulkAction[];
+        records: T[];
+        paginator: Exclude<PaginatorKind extends 'cursor' ? CursorPaginator<T> : (PaginatorKind extends 'simple' ? SimplePaginator<T> : Paginator<T>), 'data'>;
+        refinements: Refinements;
+        endpoint: string;
+    }
+}
+interface Column<T extends object = never> {
+    /** The name of this column. */
+    name: keyof T;
+    /** The label of this column. */
+    label: string;
+    /** The type of this column. */
+    type: string;
+    /** Custom metadata for this column. */
+    metadata: any;
+}
+interface Action {
+    /** The name of this action. */
+    name: string;
+    /** The label of this action. */
+    label: string;
+    /** The type of this action. */
+    type: string;
+    /** Custom metadata for this action. */
+    metadata: any;
+}
+interface BulkAction extends Action {
+    /** Should deselect all records after action. */
+    deselect: boolean;
+}
+interface BulkActionOptions {
+    /** Force deselecting all records after action. */
+    deselect?: boolean;
+}
+interface InlineAction extends Action {
+}
+type RecordIdentifier = string | number;
+/**
+ * Provides utilities for working with tables.
+ */
+declare function useTable<RecordType extends (Props[PropsKey] extends Table<infer RecordType, any> ? RecordType : never), PaginatorKindName extends (Props[PropsKey] extends Table<RecordType, infer PaginatorKind> ? PaginatorKind : never), TableType extends (Props[PropsKey] extends Table<RecordType, PaginatorKindName> ? Table<RecordType, PaginatorKindName> : never), Props extends Record<string, unknown>, PropsKey extends keyof Props>(props: Props, key: PropsKey, defaultOptions?: AvailableHybridRequestOptions): {
+    bindFilter: <T = any>(name: string, options?: BindFilterOptions<T>) => vue.Ref<T>;
+    filters: {
+        apply: (value: any, options?: AvailableHybridRequestOptions | undefined) => Promise<hybridly.NavigationResponse | undefined>;
+        clear: (options?: AvailableHybridRequestOptions | undefined) => Promise<hybridly.NavigationResponse>;
+        is_active: boolean;
+        type: string;
+        label: string;
+        metadata: Record<string, any>;
+        name: string;
+        value: any;
+        hidden: boolean;
+        default: any;
+    }[];
+    sorts: {
+        toggle: (options?: ToggleSortOptions | undefined) => Promise<hybridly.NavigationResponse | undefined>;
+        isSorting: (direction?: SortDirection | undefined) => boolean;
+        clear: (options?: AvailableHybridRequestOptions | undefined) => Promise<hybridly.NavigationResponse>;
+        is_active: boolean;
+        direction?: SortDirection | undefined;
+        default?: SortDirection | undefined;
+        label: string;
+        metadata: Record<string, any>;
+        name: string;
+        desc: string;
+        asc: string;
+        next: string;
+        hidden: boolean;
+    }[];
+    getFilter: (name: string) => FilterRefinement | undefined;
+    getSort: (name: string) => SortRefinement | undefined;
+    reset: (options?: AvailableHybridRequestOptions) => Promise<hybridly.NavigationResponse>;
+    toggleSort: (name: string, options?: ToggleSortOptions | undefined) => Promise<hybridly.NavigationResponse | undefined>;
+    isSorting: (name?: string | undefined, direction?: SortDirection | undefined) => boolean;
+    isFiltering: (name?: string | undefined) => boolean;
+    currentSorts: () => SortRefinement[];
+    currentFilters: () => FilterRefinement[];
+    clearFilter: (filter: string, options?: AvailableHybridRequestOptions) => Promise<hybridly.NavigationResponse>;
+    clearSorts: (options?: AvailableHybridRequestOptions) => Promise<hybridly.NavigationResponse>;
+    clearFilters: (options?: AvailableHybridRequestOptions) => Promise<hybridly.NavigationResponse>;
+    applyFilter: (name: string, value: any, options?: AvailableHybridRequestOptions) => Promise<hybridly.NavigationResponse | undefined>;
+    selectAll: () => void;
+    deselectAll: () => void;
+    isSelected: (record: RecordType) => boolean;
+    allSelected: boolean;
+    selection: {
+        all: boolean;
+        only: Set<RecordIdentifier>;
+        except: Set<RecordIdentifier>;
+    };
+    toggle: (record: RecordType) => void;
+    select: (record: RecordType) => void;
+    deselect: (record: RecordType) => void;
+    inlineActions: {
+        /** The name of this action. */
+        name: string;
+        /** The label of this action. */
+        label: string;
+        /** The type of this action. */
+        type: string;
+        /** Custom metadata for this action. */
+        metadata: any;
+        /** Executes the action. */
+        execute: (record: RecordType | RecordIdentifier) => Promise<hybridly.NavigationResponse>;
+    }[];
+    bulkActions: {
+        /** Should deselect all records after action. */
+        deselect: boolean;
+        /** The name of this action. */
+        name: string;
+        /** The label of this action. */
+        label: string;
+        /** The type of this action. */
+        type: string;
+        /** Custom metadata for this action. */
+        metadata: any;
+        /** Executes the action. */
+        execute: (options?: BulkActionOptions) => Promise<hybridly.NavigationResponse>;
+    }[];
+    executeInlineAction: (action: Action | string, record: RecordType | RecordIdentifier) => Promise<hybridly.NavigationResponse>;
+    executeBulkAction: (action: Action | string, options?: BulkActionOptions) => Promise<hybridly.NavigationResponse>;
+    columns: {
+        /** Toggles sorting for this column. */
+        toggleSort: (options?: ToggleSortOptions) => Promise<hybridly.NavigationResponse | undefined>;
+        /** Checks whether the column is being sorted. */
+        isSorting: (direction?: SortDirection) => boolean;
+        /** Applies the filer for this column. */
+        applyFilter: (value: any, options?: AvailableHybridRequestOptions) => Promise<hybridly.NavigationResponse | undefined>;
+        /** Clears the filter for this column. */
+        clearFilter: (options?: AvailableHybridRequestOptions) => Promise<hybridly.NavigationResponse>;
+        /** Checks whether the column is sortable. */
+        isSortable: {
+            toggle: (options?: ToggleSortOptions | undefined) => Promise<hybridly.NavigationResponse | undefined>;
+            isSorting: (direction?: SortDirection | undefined) => boolean;
+            clear: (options?: AvailableHybridRequestOptions | undefined) => Promise<hybridly.NavigationResponse>;
+            is_active: boolean;
+            direction?: SortDirection | undefined;
+            default?: SortDirection | undefined;
+            label: string;
+            metadata: Record<string, any>;
+            name: string;
+            desc: string;
+            asc: string;
+            next: string;
+            hidden: boolean;
+        } | undefined;
+        /** Checks whether the column is filterable. */
+        isFilterable: {
+            apply: (value: any, options?: AvailableHybridRequestOptions | undefined) => Promise<hybridly.NavigationResponse | undefined>;
+            clear: (options?: AvailableHybridRequestOptions | undefined) => Promise<hybridly.NavigationResponse>;
+            is_active: boolean;
+            type: string;
+            label: string;
+            metadata: Record<string, any>;
+            name: string;
+            value: any;
+            hidden: boolean;
+            default: any;
+        } | undefined;
+        /** The name of this column. */
+        name: keyof RecordType;
+        /** The label of this column. */
+        label: string;
+        /** The type of this column. */
+        type: string;
+        /** Custom metadata for this column. */
+        metadata: any;
+    }[];
+    records: {
+        /** The actual record. */
+        record: RecordType;
+        /** The key of the record. Use this instead of `id`. */
+        key: RecordIdentifier;
+        /** Executes the given inline action. */
+        execute: (action: string | InlineAction) => Promise<hybridly.NavigationResponse>;
+        /** Gets the available inline actions. */
+        actions: {
+            /** Executes the action. */
+            execute: () => Promise<hybridly.NavigationResponse>;
+            /** The name of this action. */
+            name: string;
+            /** The label of this action. */
+            label: string;
+            /** The type of this action. */
+            type: string;
+            /** Custom metadata for this action. */
+            metadata: any;
+        }[];
+        /** Selects this record. */
+        select: () => void;
+        /** Deselects this record. */
+        deselect: () => void;
+        /** Toggles the selection for this record. */
+        toggle: (force?: boolean) => void;
+        /** Checks whether this record is selected. */
+        selected: boolean;
+        /** Gets the value of the record for the specified column. */
+        value: (column: string | Column<RecordType>) => RecordType[string | keyof RecordType];
+    }[];
+    paginator: Exclude<PaginatorKindName extends "cursor" ? CursorPaginator<RecordType> : PaginatorKindName extends "simple" ? SimplePaginator<RecordType> : Paginator<RecordType>, "data">;
+};
+
+/**
+ * Access reactive query parameters.
+ *
+ * @see https://hybridly.dev/api/utils/use-query-parameters.html
+ */
+declare function useQueryParameters<T extends Record<string, any> = Record<string, any>>(): T;
+
+export { type Action, type AvailableHybridRequestOptions, type BindFilterOptions, type BulkAction, type BulkSelection, type Column, type InlineAction, type Layout, type RecordIdentifier, RouterLink, type SortDirection, type ToggleSortOptions, defineLayout, defineLayoutProperties, initializeHybridly, registerHook, setProperty, useBackForward, useBulkSelect, useContext, useDialog, useForm, useHistoryState, useProperties, useProperty, useQueryParameters, useRefinements, useRoute, useTable };

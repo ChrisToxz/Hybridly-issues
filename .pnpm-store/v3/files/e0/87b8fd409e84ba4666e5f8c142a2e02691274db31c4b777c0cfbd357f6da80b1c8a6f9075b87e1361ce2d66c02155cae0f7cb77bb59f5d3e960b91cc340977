@@ -1,0 +1,1070 @@
+'use strict';
+
+const qs = require('qs');
+const utils = require('@hybridly/utils');
+const axios = require('axios');
+const superjson = require('superjson');
+
+function _interopDefaultCompat (e) { return e && typeof e === 'object' && 'default' in e ? e.default : e; }
+
+const qs__default = /*#__PURE__*/_interopDefaultCompat(qs);
+const axios__default = /*#__PURE__*/_interopDefaultCompat(axios);
+
+const STORAGE_EXTERNAL_KEY = "hybridly:external";
+const HYBRIDLY_HEADER = "x-hybrid";
+const EXTERNAL_NAVIGATION_HEADER = `${HYBRIDLY_HEADER}-external`;
+const PARTIAL_COMPONENT_HEADER = `${HYBRIDLY_HEADER}-partial-component`;
+const ONLY_DATA_HEADER = `${HYBRIDLY_HEADER}-only-data`;
+const DIALOG_KEY_HEADER = `${HYBRIDLY_HEADER}-dialog-key`;
+const DIALOG_REDIRECT_HEADER = `${HYBRIDLY_HEADER}-dialog-redirect`;
+const EXCEPT_DATA_HEADER = `${HYBRIDLY_HEADER}-except-data`;
+const VERSION_HEADER = `${HYBRIDLY_HEADER}-version`;
+const ERROR_BAG_HEADER = `${HYBRIDLY_HEADER}-error-bag`;
+const SCROLL_REGION_ATTRIBUTE = "scroll-region";
+
+const constants = {
+	__proto__: null,
+	DIALOG_KEY_HEADER: DIALOG_KEY_HEADER,
+	DIALOG_REDIRECT_HEADER: DIALOG_REDIRECT_HEADER,
+	ERROR_BAG_HEADER: ERROR_BAG_HEADER,
+	EXCEPT_DATA_HEADER: EXCEPT_DATA_HEADER,
+	EXTERNAL_NAVIGATION_HEADER: EXTERNAL_NAVIGATION_HEADER,
+	HYBRIDLY_HEADER: HYBRIDLY_HEADER,
+	ONLY_DATA_HEADER: ONLY_DATA_HEADER,
+	PARTIAL_COMPONENT_HEADER: PARTIAL_COMPONENT_HEADER,
+	SCROLL_REGION_ATTRIBUTE: SCROLL_REGION_ATTRIBUTE,
+	STORAGE_EXTERNAL_KEY: STORAGE_EXTERNAL_KEY,
+	VERSION_HEADER: VERSION_HEADER
+};
+
+class NotAHybridResponseError extends Error {
+  constructor(response) {
+    super();
+    this.response = response;
+  }
+}
+class NavigationCancelledError extends Error {
+}
+class RoutingNotInitialized extends Error {
+  constructor() {
+    super("Routing is not initialized. Make sure the Vite plugin is enabled and that `php artisan route:list` returns no error.");
+  }
+}
+class RouteNotFound extends Error {
+  constructor(name) {
+    super(`Route [${name}] does not exist.`);
+  }
+}
+class MissingRouteParameter extends Error {
+  constructor(parameter, routeName) {
+    super(`Parameter [${parameter}] is required for route [${routeName}].`);
+  }
+}
+
+function definePlugin(plugin) {
+  return plugin;
+}
+async function forEachPlugin(cb) {
+  const { plugins } = getRouterContext();
+  for (const plugin of plugins) {
+    await cb(plugin);
+  }
+}
+async function runPluginHooks(hook, ...args) {
+  let result = true;
+  await forEachPlugin(async (plugin) => {
+    if (plugin[hook]) {
+      utils.debug.plugin(plugin.name, `Calling "${hook}" hook.`);
+      result && (result = await plugin[hook]?.(...args) !== false);
+    }
+  });
+  return result;
+}
+async function runGlobalHooks(hook, ...args) {
+  const { hooks } = getRouterContext();
+  if (!hooks[hook]) {
+    return true;
+  }
+  let result = true;
+  for (const fn of hooks[hook]) {
+    utils.debug.hook(`Calling global "${hook}" hooks.`);
+    result = await fn(...args) ?? result;
+  }
+  return result;
+}
+async function runHooks(hook, requestHooks, ...args) {
+  const result = await Promise.all([
+    requestHooks?.[hook]?.(...args),
+    runGlobalHooks(hook, ...args),
+    runPluginHooks(hook, ...args)
+  ]);
+  utils.debug.hook(`Called all hooks for [${hook}],`, result);
+  return !result.includes(false);
+}
+
+function appendCallbackToHooks(hook, fn) {
+  const hooks = getRouterContext().hooks;
+  hooks[hook] = [...hooks[hook] ?? [], fn];
+  return () => {
+    const index = hooks[hook].indexOf(fn);
+    if (index !== -1) {
+      hooks[hook]?.splice(index, 1);
+    }
+  };
+}
+function registerHook(hook, fn, options) {
+  if (options?.once) {
+    const unregister = appendCallbackToHooks(hook, async (...args) => {
+      await fn(...args);
+      unregister();
+    });
+    return unregister;
+  }
+  return appendCallbackToHooks(hook, fn);
+}
+
+function saveScrollPositions() {
+  const regions = getScrollRegions();
+  utils.debug.scroll("Saving scroll positions of:", regions.map((el) => ({ el, scroll: { top: el.scrollTop, left: el.scrollLeft } })));
+  setContext({
+    scrollRegions: regions.map(({ scrollTop, scrollLeft }) => ({
+      top: scrollTop,
+      left: scrollLeft
+    }))
+  });
+  setHistoryState({ replace: true });
+}
+function getScrollRegions() {
+  return Array.from(document?.querySelectorAll(`[${SCROLL_REGION_ATTRIBUTE}]`) ?? []).concat(document.documentElement, document.body);
+}
+function resetScrollPositions() {
+  utils.debug.scroll("Resetting scroll positions.");
+  getScrollRegions().forEach((element) => element.scrollTo({
+    top: 0,
+    left: 0
+  }));
+  saveScrollPositions();
+  if (window.location.hash) {
+    utils.debug.scroll(`Hash is present, scrolling to the element of ID ${window.location.hash}.`);
+    document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+  }
+}
+async function restoreScrollPositions() {
+  const context = getRouterContext();
+  const regions = getScrollRegions();
+  if (!context.scrollRegions) {
+    utils.debug.scroll("No region found to restore.");
+    return;
+  }
+  context.adapter.executeOnMounted(() => {
+    utils.debug.scroll(`Restoring ${regions.length}/${context.scrollRegions.length} region(s).`);
+    regions.forEach((el, i) => el.scrollTo({
+      top: context.scrollRegions.at(i)?.top ?? el.scrollTop,
+      left: context.scrollRegions.at(i)?.top ?? el.scrollLeft
+    }));
+  });
+}
+
+function normalizeUrl(href, trailingSlash) {
+  return makeUrl(href, { trailingSlash }).toString();
+}
+function makeUrl(href, transformations = {}) {
+  try {
+    const base = document?.location?.href === "//" ? void 0 : document.location.href;
+    const url = new URL(String(href), base);
+    transformations = typeof transformations === "function" ? transformations(url) ?? {} : transformations ?? {};
+    Object.entries(transformations).forEach(([key, value]) => {
+      if (key === "query") {
+        const currentQueryParameters = utils.merge(
+          qs__default.parse(url.search, { ignoreQueryPrefix: true }),
+          value,
+          { mergePlainObjects: true }
+        );
+        key = "search";
+        value = qs__default.stringify(currentQueryParameters, {
+          encodeValuesOnly: true,
+          arrayFormat: "brackets",
+          filter: (_, object) => object instanceof Set ? [...object] : object
+        });
+      }
+      Reflect.set(url, key, value);
+    });
+    if (transformations.trailingSlash === false) {
+      const _url = utils.removeTrailingSlash(url.toString().replace(/\/\?/, "?"));
+      url.toString = () => _url;
+    }
+    return url;
+  } catch (error) {
+    throw new TypeError(`${href} is not resolvable to a valid URL.`);
+  }
+}
+function sameUrls(...hrefs) {
+  if (hrefs.length < 2) {
+    return true;
+  }
+  try {
+    return hrefs.every((href) => {
+      return makeUrl(href, { hash: "" }).toJSON() === makeUrl(hrefs.at(0), { hash: "" }).toJSON();
+    });
+  } catch {
+  }
+  return false;
+}
+function sameHashes(...hrefs) {
+  if (hrefs.length < 2) {
+    return true;
+  }
+  try {
+    return hrefs.every((href) => {
+      return makeUrl(href).toJSON() === makeUrl(hrefs.at(0)).toJSON();
+    });
+  } catch {
+  }
+  return false;
+}
+function fillHash(currentUrl, targetUrl) {
+  currentUrl = makeUrl(currentUrl);
+  targetUrl = makeUrl(targetUrl);
+  if (currentUrl.hash && !targetUrl.hash && sameUrls(targetUrl, currentUrl)) {
+    targetUrl.hash = currentUrl.hash;
+  }
+  return targetUrl.toString();
+}
+
+function setHistoryState(options = {}) {
+  if (!window?.history) {
+    throw new Error("The history API is not available, so Hybridly cannot operate.");
+  }
+  const context = getRouterContext();
+  const method = options.replace ? "replaceState" : "pushState";
+  const serialized = serializeContext(context);
+  utils.debug.history("Setting history state:", {
+    method,
+    context
+    // serialized,
+  });
+  try {
+    window.history[method](serialized, "", context.url);
+  } catch (error) {
+    console.error("Hybridly could not save its current state in the history. This is most likely due to a property being non-serializable, such as a proxy or a reference.");
+    throw error;
+  }
+}
+function getHistoryState() {
+  return getRouterContext().serializer.unserialize(window.history.state);
+}
+function getHistoryMemo(key) {
+  const state = getHistoryState();
+  return key ? state?.memo?.[key] : state?.memo;
+}
+async function registerEventListeners() {
+  const context = getRouterContext();
+  utils.debug.history("Registering [popstate] and [scroll] event listeners.");
+  window?.addEventListener("popstate", async (event) => {
+    utils.debug.history("Navigation detected (popstate event). State:", { state: event.state });
+    if (context.pendingNavigation) {
+      utils.debug.router("Aborting current navigation.", context.pendingNavigation);
+      context.pendingNavigation?.controller?.abort();
+    }
+    const state = context.serializer.unserialize(event.state);
+    await runHooks("backForward", {}, state, context);
+    if (!state) {
+      utils.debug.history("There is no state. Adding hash if any and restoring scroll positions.");
+      return await navigate({
+        type: "initial",
+        payload: {
+          ...context,
+          url: makeUrl(context.url, { hash: window.location.hash }).toString()
+        },
+        preserveScroll: true,
+        preserveState: true,
+        replace: true
+      });
+    }
+    await navigate({
+      type: "back-forward",
+      payload: state,
+      preserveScroll: true,
+      preserveState: !!getInternalRouterContext().dialog || !!state.dialog,
+      updateHistoryState: false
+    });
+  });
+  window?.addEventListener("scroll", (event) => utils.debounce(() => {
+    if (event?.target?.hasAttribute?.(SCROLL_REGION_ATTRIBUTE)) {
+      saveScrollPositions();
+    }
+  }, 100), true);
+}
+function isBackForwardNavigation() {
+  if (!window.history.state) {
+    return false;
+  }
+  return window.performance?.getEntriesByType("navigation").at(0)?.type === "back_forward";
+}
+async function handleBackForwardNavigation() {
+  utils.debug.router("Handling a back/forward navigation from an external URL.");
+  const context = getRouterContext();
+  const state = getHistoryState();
+  if (!state) {
+    throw new Error("Tried to handling a back/forward navigation, but there was no state in the history. This should not happen.");
+  }
+  await navigate({
+    type: "back-forward",
+    payload: {
+      ...state,
+      version: context.version
+    },
+    preserveScroll: true,
+    preserveState: false,
+    updateHistoryState: false
+  });
+}
+function remember(key, value) {
+  utils.debug.history(`Remembering key "${key}" with value`, value);
+  setContext({
+    memo: {
+      ...getHistoryMemo(),
+      [key]: value
+    }
+  }, { propagate: false });
+  setHistoryState({ replace: true });
+}
+function serializeContext(context) {
+  return context.serializer.serialize({
+    url: context.url,
+    version: context.version,
+    view: context.view,
+    dialog: context.dialog,
+    scrollRegions: context.scrollRegions,
+    memo: context.memo
+  });
+}
+function createSerializer(options) {
+  if (options.serializer) {
+    return options.serializer;
+  }
+  return {
+    serialize: (data) => {
+      utils.debug.history("Serializing data.", data);
+      return superjson.stringify(data);
+    },
+    unserialize: (data) => {
+      if (!data) {
+        utils.debug.history("No data to unserialize.");
+        return;
+      }
+      return superjson.parse(data);
+    }
+  };
+}
+
+function getUrlRegexForRoute(name) {
+  const routing = getRouting();
+  const definition = getRouteDefinition(name);
+  const path = definition.uri.replaceAll("/", "\\/");
+  const domain = definition.domain;
+  const protocolPrefix = routing.url.match(/^\w+:\/\//)?.[0];
+  const origin = domain ? `${protocolPrefix}${domain}${routing.port ? `:${routing.port}` : ""}`.replaceAll("/", "\\/") : routing.url.replaceAll("/", "\\/");
+  const urlPathRegexPattern = path.length > 0 ? `\\/${path.replace(/\/$/g, "")}` : "";
+  let urlRegexPattern = `^${origin.replaceAll(".", "\\.")}${urlPathRegexPattern}\\/?(\\?.*)?$`;
+  urlRegexPattern = urlRegexPattern.replace(/(\\\/?){([^}?]+)(\??)}/g, (_, slash, parameterName, optional) => {
+    const where = definition.wheres?.[parameterName];
+    let regexTemplate = where?.replace(/(^\^)|(\$$)/g, "") || "[^/?]+";
+    regexTemplate = `(?<${parameterName}>${regexTemplate})`;
+    if (optional) {
+      return `(${slash ? "\\/?" : ""}${regexTemplate})?`;
+    }
+    return (slash ? "\\/" : "") + regexTemplate;
+  });
+  return RegExp(urlRegexPattern);
+}
+function urlMatchesRoute(url, name, routeParameters) {
+  const parameters = routeParameters || {};
+  const definition = getRouting().routes[name];
+  if (!definition) {
+    return false;
+  }
+  const matches = getUrlRegexForRoute(name).exec(url);
+  if (!matches) {
+    return false;
+  }
+  for (const k in matches.groups) {
+    matches.groups[k] = typeof matches.groups[k] === "string" ? decodeURIComponent(matches.groups[k]) : matches.groups[k];
+  }
+  return Object.keys(parameters).every((parameterName) => {
+    let value = parameters[parameterName];
+    const bindingProperty = definition.bindings?.[parameterName];
+    if (bindingProperty && typeof value === "object") {
+      value = value[bindingProperty];
+    }
+    return matches.groups?.[parameterName] === value.toString();
+  });
+}
+function generateRouteFromName(name, parameters, absolute, shouldThrow) {
+  const url = getUrlFromName(name, parameters, shouldThrow);
+  return absolute === false ? url.toString().replace(url.origin, "") : url.toString();
+}
+function getNameFromUrl(url, parameters) {
+  const routing = getRouting();
+  const routes = Object.values(routing.routes).map((x) => x.name);
+  return routes.find((routeName) => {
+    return urlMatchesRoute(url, routeName, parameters);
+  });
+}
+function getUrlFromName(name, parameters, shouldThrow) {
+  const routing = getRouting();
+  const definition = getRouteDefinition(name);
+  const transforms = getRouteTransformable(name, parameters, shouldThrow);
+  const url = makeUrl(routing.url, (url2) => ({
+    hostname: definition.domain || url2.hostname,
+    port: routing.port?.toString() || url2.port,
+    trailingSlash: false,
+    ...transforms
+  }));
+  return url;
+}
+function getRouteParameterValue(routeName, parameterName, routeParameters) {
+  const routing = getRouting();
+  const definition = getRouteDefinition(routeName);
+  const parameters = routeParameters || {};
+  const value = (() => {
+    const value2 = parameters[parameterName];
+    const bindingProperty = definition.bindings?.[parameterName];
+    if (bindingProperty && value2 != null && typeof value2 === "object") {
+      return value2[bindingProperty];
+    }
+    return value2;
+  })();
+  if (value) {
+    const where = definition.wheres?.[parameterName];
+    if (where && !new RegExp(where).test(value)) {
+      console.warn(`[hybridly:routing] Parameter [${parameterName}] does not match the required format [${where}] for route [${routeName}].`);
+    }
+    return value;
+  }
+  if (routing.defaults?.[parameterName]) {
+    return routing.defaults?.[parameterName];
+  }
+}
+function getRouteTransformable(routeName, routeParameters, shouldThrow) {
+  const definition = getRouteDefinition(routeName);
+  const parameters = routeParameters || {};
+  const missing = Object.keys(parameters);
+  const replaceParameter = (match, parameterName, optional) => {
+    const value = getRouteParameterValue(routeName, parameterName, parameters);
+    missing.splice(missing.indexOf(parameterName), 1);
+    if (value) {
+      return value;
+    }
+    if (optional) {
+      return "";
+    }
+    if (shouldThrow === false) {
+      return "";
+    }
+    throw new MissingRouteParameter(parameterName, routeName);
+  };
+  const path = definition.uri.replace(/{([^}?]+)(\??)}/g, replaceParameter);
+  const domain = definition.domain?.replace(/{([^}?]+)(\??)}/g, replaceParameter);
+  const remaining = Object.keys(parameters).filter((key) => missing.includes(key)).reduce((obj, key) => ({
+    ...obj,
+    [key]: parameters[key]
+  }), {});
+  return {
+    ...domain && { hostname: domain },
+    pathname: path,
+    search: qs__default.stringify(remaining, {
+      encodeValuesOnly: true,
+      arrayFormat: "indices",
+      addQueryPrefix: true
+    })
+  };
+}
+function getRouteDefinition(name) {
+  const routing = getRouting();
+  const definition = routing.routes[name];
+  if (!definition) {
+    throw new RouteNotFound(name);
+  }
+  return definition;
+}
+function getRouting() {
+  const { routing } = getInternalRouterContext();
+  if (!routing) {
+    throw new RoutingNotInitialized();
+  }
+  return routing;
+}
+function route(name, parameters, absolute) {
+  return generateRouteFromName(name, parameters, absolute);
+}
+
+function getCurrentUrl() {
+  if (typeof window === "undefined") {
+    return getInternalRouterContext().url;
+  }
+  return window.location.toString();
+}
+function currentRouteMatches(name, parameters) {
+  const namePattern = `^${name.replaceAll(".", "\\.").replaceAll("*", ".*")}$`;
+  const possibleRoutes = Object.values(getRouting().routes).filter((x) => x.method.includes("GET") && RegExp(namePattern).test(x.name)).map((x) => x.name);
+  const currentUrl = getCurrentUrl();
+  return possibleRoutes.some((routeName) => {
+    return urlMatchesRoute(currentUrl, routeName, parameters);
+  });
+}
+function getCurrentRouteName() {
+  return getNameFromUrl(getCurrentUrl());
+}
+
+function updateRoutingConfiguration(routing) {
+  if (!routing) {
+    return;
+  }
+  setContext({ routing });
+}
+
+const state = {
+  initialized: false,
+  context: {}
+};
+function getRouterContext() {
+  return getInternalRouterContext();
+}
+function getInternalRouterContext() {
+  if (!state.initialized) {
+    throw new Error("Hybridly is not initialized.");
+  }
+  return state.context;
+}
+async function initializeContext(options) {
+  state.initialized = true;
+  state.context = {
+    ...options.payload,
+    responseErrorModals: options.responseErrorModals,
+    serializer: createSerializer(options),
+    url: makeUrl(options.payload.url).toString(),
+    adapter: {
+      ...options.adapter,
+      updateRoutingConfiguration
+    },
+    scrollRegions: [],
+    plugins: options.plugins ?? [],
+    axios: options.axios ?? axios__default.create(),
+    routing: options.routing,
+    preloadCache: /* @__PURE__ */ new Map(),
+    hooks: {},
+    memo: {}
+  };
+  await runHooks("initialized", {}, state.context);
+  return getInternalRouterContext();
+}
+function setContext(merge = {}, options = {}) {
+  Object.keys(merge).forEach((key) => {
+    Reflect.set(state.context, key, merge[key]);
+  });
+  if (options.propagate !== false) {
+    state.context.adapter.onContextUpdate?.(state.context);
+  }
+  utils.debug.context("Updated context:", { context: state.context, added: merge });
+}
+function payloadFromContext() {
+  return {
+    url: getRouterContext().url,
+    version: getRouterContext().version,
+    view: getRouterContext().view,
+    dialog: getRouterContext().dialog
+  };
+}
+
+async function performExternalNavigation(options) {
+  utils.debug.external("Navigating to an external URL:", options);
+  window.sessionStorage.setItem(STORAGE_EXTERNAL_KEY, JSON.stringify(options));
+  window.location.href = options.url;
+  if (sameUrls(window.location, options.url)) {
+    utils.debug.external("Manually reloading due to the external URL being the same.");
+    window.location.reload();
+  }
+}
+function navigateToExternalUrl(url, data) {
+  document.location.href = makeUrl(url, {
+    search: qs__default.stringify(data, {
+      encodeValuesOnly: true,
+      arrayFormat: "brackets"
+    })
+  }).toString();
+}
+function isExternalResponse(response) {
+  return response?.status === 409 && !!response?.headers?.[EXTERNAL_NAVIGATION_HEADER];
+}
+async function handleExternalNavigation() {
+  utils.debug.external("Handling an external navigation.");
+  const options = JSON.parse(window.sessionStorage.getItem(STORAGE_EXTERNAL_KEY) || "{}");
+  window.sessionStorage.removeItem(STORAGE_EXTERNAL_KEY);
+  utils.debug.external("Options from the session storage:", options);
+  setContext({
+    url: makeUrl(getRouterContext().url, { hash: window.location.hash }).toString()
+  });
+  await navigate({
+    type: "initial",
+    preserveState: true,
+    preserveScroll: options.preserveScroll
+  });
+}
+function isExternalNavigation() {
+  try {
+    return window.sessionStorage.getItem(STORAGE_EXTERNAL_KEY) !== null;
+  } catch {
+  }
+  return false;
+}
+
+async function closeDialog(options) {
+  const context = getInternalRouterContext();
+  const url = context.dialog?.redirectUrl ?? context.dialog?.baseUrl;
+  if (!url) {
+    return;
+  }
+  context.adapter.onDialogClose?.(context);
+  if (options?.local === true) {
+    return await performLocalNavigation(url, {
+      preserveScroll: true,
+      preserveState: true,
+      dialog: false,
+      component: context.view.component,
+      properties: context.view.properties,
+      ...options
+    });
+  }
+  return await performHybridNavigation({
+    url,
+    preserveScroll: true,
+    preserveState: true,
+    ...options
+  });
+}
+
+function isDownloadResponse(response) {
+  return response.status === 200 && !!response.headers["content-disposition"];
+}
+async function handleDownloadResponse(response) {
+  const blob = new Blob([response.data], { type: "application/octet-stream" });
+  const urlObject = window.webkitURL || window.URL;
+  const link = document.createElement("a");
+  link.style.display = "none";
+  link.href = urlObject.createObjectURL(blob);
+  link.download = getFileNameFromContentDispositionHeader(response.headers["content-disposition"]);
+  link.click();
+  setTimeout(() => {
+    urlObject.revokeObjectURL(link.href);
+    link.remove();
+  }, 0);
+}
+function getFileNameFromContentDispositionHeader(header) {
+  const result = header.split(";")[1]?.trim().split("=")[1];
+  return result?.replace(/^"(.*)"$/, "$1") ?? "";
+}
+
+function isPreloaded(targetUrl) {
+  const context = getInternalRouterContext();
+  return context.preloadCache.has(targetUrl.toString()) ?? false;
+}
+function getPreloadedRequest(targetUrl) {
+  const context = getInternalRouterContext();
+  return context.preloadCache.get(targetUrl.toString());
+}
+function storePreloadRequest(targetUrl, response) {
+  const context = getInternalRouterContext();
+  context.preloadCache.set(targetUrl.toString(), response);
+}
+function discardPreloadedRequest(targetUrl) {
+  const context = getInternalRouterContext();
+  return context.preloadCache.delete(targetUrl.toString());
+}
+async function performPreloadRequest(options) {
+  const context = getRouterContext();
+  const url = makeUrl(options.url ?? context.url);
+  if (isPreloaded(url)) {
+    utils.debug.router("This request is already preloaded.");
+    return false;
+  }
+  if (context.pendingNavigation) {
+    utils.debug.router("A navigation is pending, preload aborted.");
+    return false;
+  }
+  if (options.method !== "GET") {
+    utils.debug.router("Cannot preload non-GET requests.");
+    return false;
+  }
+  utils.debug.router(`Preloading response for [${url.toString()}]`);
+  try {
+    const response = await performHybridRequest(url, options);
+    if (!isHybridResponse(response)) {
+      utils.debug.router("Preload result was invalid.");
+      return false;
+    }
+    storePreloadRequest(url, response);
+    return true;
+  } catch (error) {
+    utils.debug.router("Preloading failed.");
+    return false;
+  }
+}
+
+const router = {
+  abort: async () => getRouterContext().pendingNavigation?.controller.abort(),
+  active: () => !!getRouterContext().pendingNavigation,
+  navigate: async (options) => await performHybridNavigation(options),
+  reload: async (options) => await performHybridNavigation({ preserveScroll: true, preserveState: true, replace: true, ...options }),
+  get: async (url, options = {}) => await performHybridNavigation({ ...options, url, method: "GET" }),
+  post: async (url, options = {}) => await performHybridNavigation({ preserveState: true, ...options, url, method: "POST" }),
+  put: async (url, options = {}) => await performHybridNavigation({ preserveState: true, ...options, url, method: "PUT" }),
+  patch: async (url, options = {}) => await performHybridNavigation({ preserveState: true, ...options, url, method: "PATCH" }),
+  delete: async (url, options = {}) => await performHybridNavigation({ preserveState: true, ...options, url, method: "DELETE" }),
+  local: async (url, options = {}) => await performLocalNavigation(url, options),
+  preload: async (url, options = {}) => await performPreloadRequest({ ...options, url, method: "GET" }),
+  external: (url, data = {}) => navigateToExternalUrl(url, data),
+  to: async (name, parameters, options) => {
+    const url = generateRouteFromName(name, parameters);
+    const method = getRouteDefinition(name).method.at(0);
+    return await performHybridNavigation({ url, ...options, method });
+  },
+  matches: (name, parameters) => currentRouteMatches(name, parameters),
+  current: () => getCurrentRouteName(),
+  dialog: {
+    close: (options) => closeDialog(options)
+  },
+  history: {
+    get: (key) => getHistoryMemo(key),
+    remember: (key, value) => remember(key, value)
+  }
+};
+async function createRouter(options) {
+  await initializeContext(options);
+  return await initializeRouter();
+}
+async function performHybridNavigation(options) {
+  const navigationId = utils.random();
+  const context = getRouterContext();
+  utils.debug.router("Making a hybrid navigation:", { context, options, navigationId });
+  try {
+    if (!options.method) {
+      utils.debug.router("Setting method to GET because none was provided.");
+      options.method = "GET";
+    }
+    options.method = options.method.toUpperCase();
+    if ((utils.hasFiles(options.data) || options.useFormData) && !(options.data instanceof FormData)) {
+      options.data = utils.objectToFormData(options.data);
+      utils.debug.router("Converted data to FormData.", options.data);
+    }
+    if (!(options.data instanceof FormData) && options.method === "GET" && Object.keys(options.data ?? {}).length) {
+      utils.debug.router("Transforming data to query parameters.", options.data);
+      options.url = makeUrl(options.url ?? context.url, {
+        query: options.data
+      });
+      options.data = {};
+    }
+    if (["PUT", "PATCH", "DELETE"].includes(options.method) && options.spoof !== false) {
+      utils.debug.router(`Automatically spoofing method ${options.method}.`);
+      if (options.data instanceof FormData) {
+        options.data.append("_method", options.method);
+      } else if (Object.keys(options.data ?? {}).length) {
+        Object.assign(options.data, { _method: options.method });
+      } else if (typeof options.data === "undefined") {
+        options.data = { _method: options.method };
+      } else {
+        utils.debug.router("Could not spoof method because body type is not supported.", options.data);
+      }
+      options.method = "POST";
+    }
+    if (!await runHooks("before", options.hooks, options, context)) {
+      utils.debug.router('"before" event returned false, aborting the navigation.');
+      throw new NavigationCancelledError('The navigation was cancelled by the "before" event.');
+    }
+    if (context.pendingNavigation) {
+      utils.debug.router("Aborting current navigation.", context.pendingNavigation);
+      context.pendingNavigation?.controller?.abort();
+    }
+    saveScrollPositions();
+    const targetUrl = makeUrl(options.url ?? context.url, options.transformUrl);
+    const abortController = new AbortController();
+    setContext({
+      pendingNavigation: {
+        id: navigationId,
+        url: targetUrl,
+        controller: abortController,
+        status: "pending",
+        options
+      }
+    });
+    await runHooks("start", options.hooks, context);
+    utils.debug.router("Making request with axios.");
+    const response = await performHybridRequest(targetUrl, options, abortController);
+    const result = await runHooks("data", options.hooks, response, context);
+    if (result === false) {
+      return { response };
+    }
+    if (isExternalResponse(response)) {
+      utils.debug.router("The response is explicitely external.");
+      await performExternalNavigation({
+        url: fillHash(targetUrl, response.headers[EXTERNAL_NAVIGATION_HEADER]),
+        preserveScroll: options.preserveScroll === true
+      });
+      return { response };
+    }
+    if (isDownloadResponse(response)) {
+      utils.debug.router("The response returns a file to download.");
+      await handleDownloadResponse(response);
+      return { response };
+    }
+    if (!isHybridResponse(response)) {
+      throw new NotAHybridResponseError(response);
+    }
+    utils.debug.router("The response respects the Hybridly protocol.");
+    const payload = response.data;
+    if ((options.only?.length ?? options.except?.length) && payload.view.component === context.view.component) {
+      utils.debug.router(`Merging ${options.only ? '"only"' : '"except"'} properties.`, payload.view.properties);
+      payload.view.properties = utils.merge(context.view.properties, payload.view.properties);
+      utils.debug.router("Merged properties:", payload.view.properties);
+    }
+    await navigate({
+      type: "server",
+      payload: {
+        ...payload,
+        url: fillHash(targetUrl, payload.url)
+      },
+      preserveScroll: options.preserveScroll,
+      preserveState: options.preserveState,
+      preserveUrl: options.preserveUrl,
+      replace: options.replace === true || options.preserveUrl || sameUrls(payload.url, window.location.href) && !sameHashes(payload.url, window.location.href)
+    });
+    if (Object.keys(context.view.properties.errors ?? {}).length > 0) {
+      const errors = (() => {
+        if (options.errorBag && typeof context.view.properties.errors === "object") {
+          return context.view.properties.errors[options.errorBag] ?? {};
+        }
+        return context.view.properties.errors;
+      })();
+      utils.debug.router("The request returned validation errors.", errors);
+      setContext({
+        pendingNavigation: {
+          ...context.pendingNavigation,
+          status: "error"
+        }
+      });
+      await runHooks("error", options.hooks, errors, context);
+    } else {
+      setContext({
+        pendingNavigation: {
+          ...context.pendingNavigation,
+          status: "success"
+        }
+      });
+      await runHooks("success", options.hooks, payload, context);
+    }
+    return { response };
+  } catch (error) {
+    await utils.match(error.constructor.name, {
+      NavigationCancelledError: async () => {
+        utils.debug.router('The request was cancelled through the "before" hook.', error);
+        await runHooks("abort", options.hooks, context);
+      },
+      AbortError: async () => {
+        utils.debug.router("The request was aborted.", error);
+        await runHooks("abort", options.hooks, context);
+      },
+      NotAHybridResponseError: async () => {
+        utils.debug.router("The request was not hybridly.");
+        console.error(error);
+        await runHooks("invalid", options.hooks, error, context);
+        if (context.responseErrorModals) {
+          utils.showResponseErrorModal(error.response.data);
+        }
+      },
+      default: async () => {
+        if (error?.name === "CanceledError") {
+          utils.debug.router("The request was cancelled.", error);
+          await runHooks("abort", options.hooks, context);
+        } else {
+          utils.debug.router("An unknown error occured.", error);
+          console.error(error);
+          await runHooks("exception", options.hooks, error, context);
+        }
+      }
+    });
+    await runHooks("fail", options.hooks, context);
+    return {
+      error: {
+        type: error.constructor.name,
+        actual: error
+      }
+    };
+  } finally {
+    utils.debug.router("Ending navigation.");
+    await runHooks("after", options.hooks, context);
+    if (context.pendingNavigation?.id === navigationId) {
+      setContext({ pendingNavigation: void 0 });
+    }
+  }
+}
+function isHybridResponse(response) {
+  return !!response?.headers[HYBRIDLY_HEADER];
+}
+async function navigate(options) {
+  const context = getRouterContext();
+  options.hasDialog ?? (options.hasDialog = !!options.payload?.dialog);
+  utils.debug.router("Making an internal navigation:", { context, options });
+  await runHooks("navigating", {}, options, context);
+  options.payload ?? (options.payload = payloadFromContext());
+  function evaluateConditionalOption(option) {
+    return typeof option === "function" ? option(options) : option;
+  }
+  const shouldPreserveState = evaluateConditionalOption(options.preserveState);
+  const shouldPreserveScroll = evaluateConditionalOption(options.preserveScroll);
+  const shouldReplaceHistory = evaluateConditionalOption(options.replace);
+  const shouldReplaceUrl = evaluateConditionalOption(options.preserveUrl);
+  const shouldPreserveView = !options.payload.view.component;
+  if (shouldPreserveState && getHistoryMemo() && options.payload.view.component === context.view.component) {
+    utils.debug.history("Setting the memo from this history entry into the current context.");
+    setContext({ memo: getHistoryMemo() });
+  }
+  if (shouldReplaceUrl) {
+    utils.debug.router(`Preserving the current URL (${context.url}) instead of navigating to ${options.payload.url}`);
+    options.payload.url = context.url;
+  }
+  const payload = shouldPreserveView ? {
+    view: {
+      component: context.view.component,
+      properties: utils.merge(context.view.properties, options.payload.view.properties),
+      deferred: context.view.deferred
+    },
+    url: context.url,
+    version: options.payload.version,
+    dialog: context.dialog
+  } : options.payload;
+  setContext({ ...payload, memo: {} });
+  if (options.updateHistoryState !== false) {
+    utils.debug.router(`Target URL is ${context.url}, current window URL is ${window.location.href}.`, { shouldReplaceHistory });
+    setHistoryState({ replace: shouldReplaceHistory });
+  }
+  if (context.view.deferred?.length) {
+    utils.debug.router("Request has deferred properties, queueing a partial reload:", context.view.deferred);
+    context.adapter.executeOnMounted(async () => {
+      await performHybridNavigation({
+        preserveScroll: true,
+        preserveState: true,
+        replace: true,
+        only: context.view.deferred
+      });
+    });
+  }
+  const viewComponent = !shouldPreserveView ? await context.adapter.resolveComponent(context.view.component) : void 0;
+  if (viewComponent) {
+    utils.debug.router(`Component [${context.view.component}] resolved to:`, viewComponent);
+  }
+  await context.adapter.onViewSwap({
+    component: viewComponent,
+    dialog: context.dialog,
+    properties: options.payload?.view?.properties,
+    preserveState: shouldPreserveState,
+    onMounted: (hookOptions) => runHooks("mounted", {}, { ...options, ...hookOptions }, context)
+  });
+  if (options.type === "back-forward") {
+    restoreScrollPositions();
+  } else if (!shouldPreserveScroll) {
+    resetScrollPositions();
+  }
+  await runHooks("navigated", {}, options, context);
+}
+async function performHybridRequest(targetUrl, options, abortController) {
+  const context = getInternalRouterContext();
+  const preloaded = getPreloadedRequest(targetUrl);
+  if (preloaded) {
+    utils.debug.router(`Found a pre-loaded request for [${targetUrl}]`);
+    discardPreloadedRequest(targetUrl);
+    return preloaded;
+  }
+  return await context.axios.request({
+    url: targetUrl.toString(),
+    method: options.method,
+    data: options.method === "GET" ? {} : options.data,
+    params: options.method === "GET" ? options.data : {},
+    signal: abortController?.signal,
+    headers: {
+      ...options.headers,
+      ...context.dialog ? { [DIALOG_KEY_HEADER]: context.dialog.key } : {},
+      ...context.dialog ? { [DIALOG_REDIRECT_HEADER]: context.dialog.redirectUrl ?? "" } : {},
+      ...utils.when(options.only !== void 0 || options.except !== void 0, {
+        [PARTIAL_COMPONENT_HEADER]: context.view.component,
+        ...utils.when(options.only, { [ONLY_DATA_HEADER]: JSON.stringify(options.only) }, {}),
+        ...utils.when(options.except, { [EXCEPT_DATA_HEADER]: JSON.stringify(options.except) }, {})
+      }, {}),
+      ...utils.when(options.errorBag, { [ERROR_BAG_HEADER]: options.errorBag }, {}),
+      ...utils.when(context.version, { [VERSION_HEADER]: context.version }, {}),
+      [HYBRIDLY_HEADER]: true,
+      "X-Requested-With": "XMLHttpRequest",
+      "Accept": "text/html, application/xhtml+xml"
+    },
+    validateStatus: () => true,
+    onUploadProgress: async (event) => {
+      await runHooks("progress", options.hooks, {
+        event,
+        percentage: Math.round(event.loaded / (event.total ?? 0) * 100)
+      }, context);
+    }
+  });
+}
+async function initializeRouter() {
+  const context = getRouterContext();
+  if (isBackForwardNavigation()) {
+    handleBackForwardNavigation();
+  } else if (isExternalNavigation()) {
+    handleExternalNavigation();
+  } else {
+    utils.debug.router("Handling the initial navigation.");
+    setContext({
+      url: makeUrl(context.url, { hash: window.location.hash }).toString()
+    });
+    await navigate({
+      type: "initial",
+      preserveState: true,
+      replace: sameUrls(context.url, window.location.href)
+    });
+  }
+  registerEventListeners();
+  await runHooks("ready", {}, context);
+  return context;
+}
+async function performLocalNavigation(targetUrl, options) {
+  const context = getRouterContext();
+  const url = normalizeUrl(targetUrl);
+  return await navigate({
+    ...options,
+    type: "local",
+    payload: {
+      version: context.version,
+      dialog: options?.dialog === false ? void 0 : options?.dialog ?? context.dialog,
+      url,
+      view: {
+        component: options?.component ?? context.view.component,
+        properties: options?.properties ?? {},
+        deferred: []
+      }
+    }
+  });
+}
+
+function can(resource, action) {
+  return resource.authorization?.[action] ?? false;
+}
+
+exports.can = can;
+exports.constants = constants;
+exports.createRouter = createRouter;
+exports.definePlugin = definePlugin;
+exports.getRouterContext = getRouterContext;
+exports.makeUrl = makeUrl;
+exports.registerHook = registerHook;
+exports.route = route;
+exports.router = router;
+exports.sameUrls = sameUrls;

@@ -1,0 +1,374 @@
+import baseMerge from 'deepmerge';
+import { isPlainObject } from 'is-plain-object';
+export { default as clone } from 'lodash.clonedeep';
+import makeDebugger from 'debug';
+
+function hasFiles(data) {
+  if (!data) {
+    return false;
+  }
+  return data instanceof File || data instanceof Blob || data instanceof FileList && data.length > 0 || data instanceof FormData && Array.from(data.values()).some((value) => hasFiles(value)) || typeof data === "object" && data !== null && Object.values(data).some((value) => hasFiles(value));
+}
+function objectToFormData(source, form, parentKey) {
+  source ?? (source = {});
+  form ?? (form = new FormData());
+  if (typeof source !== "object" || source instanceof Set || Array.isArray(source) || source instanceof Blob || source instanceof Date || source instanceof FormData) {
+    throw new TypeError("Source must be an object literal to be converted to a FormData object.");
+  }
+  for (const key in source) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      append(form, composeKey(key, parentKey), source[key]);
+    }
+  }
+  return form;
+}
+function composeKey(key, parentKey) {
+  return parentKey ? `${parentKey}[${key}]` : key;
+}
+function append(form, key, value) {
+  if (Array.isArray(value) || value instanceof Set) {
+    const valueAsArray = value instanceof Set ? [...value] : value;
+    if (!valueAsArray.length) {
+      return form.append(key, "");
+    }
+    return Array.from(valueAsArray.keys()).forEach((index) => append(form, composeKey(index.toString(), key), valueAsArray[index]));
+  } else if (value instanceof Date) {
+    return form.append(key, value.toISOString());
+  } else if (value instanceof File) {
+    return form.append(key, value, value.name);
+  } else if (value instanceof Blob) {
+    return form.append(key, value);
+  } else if (typeof value === "boolean") {
+    return form.append(key, value ? "1" : "0");
+  } else if (typeof value === "string") {
+    return form.append(key, value);
+  } else if (typeof value === "number") {
+    return form.append(key, `${value}`);
+  } else if (value === null || value === void 0) {
+    return form.append(key, "");
+  }
+  objectToFormData(value, form, key);
+}
+
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => {
+  __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+  return value;
+};
+const stack = [];
+class Modal {
+  constructor(html, id) {
+    this.html = html;
+    this.id = id;
+    __publicField(this, "main");
+    __publicField(this, "overlay");
+    __publicField(this, "iframe");
+    __publicField(this, "style");
+    __publicField(this, "hideOnEscape");
+    __publicField(this, "animationDurationInMs", 200);
+    if (stack.includes(id)) {
+      return;
+    }
+    if (this.initializeDOM() === false) {
+      return;
+    }
+    this.show();
+  }
+  static fromException(response, id) {
+    if (typeof response === "string" && response.trim() !== "") {
+      return new Modal(`<style>${htmlStyle()}</style>${response.toString()}`, id);
+    }
+    return new Modal(`
+			<style>${style()}</style>
+			<div class="h-full text-center flex">
+				<div class="m-auto">
+					<div class="text-5xl font-thin">Error</div>
+					<div class="opacity-30 text-lg font-thin m-1">The received response does not respect the Hybridly protocol.</div>
+					<pre class="text-sm opacity-80 max-h-[500px] w-full mx-auto text-left mt-6">${JSON.stringify(response, null, 2)}</pre>
+				</div>
+			</div>
+		`, id);
+  }
+  static forViewComponent(component, id) {
+    return new Modal(`
+			<style>${style()}</style>
+			<div class="h-full text-center flex">
+				<div class="m-auto">
+					<div class="text-5xl font-thin">Error</div>
+					<div class="opacity-30 text-lg font-thin m-1">The specified view component does not exist.</div>
+					<div class="m-2 flex justify-center text-xl opacity-30 underline underline-dotted">${component}</div>
+				</div>
+			</div>
+		`, id);
+  }
+  initializeDOM() {
+    if (!this.html) {
+      return false;
+    }
+    if (document.querySelector('[data-hybridly-overlay="true"]')) {
+      return false;
+    }
+    const main = document.createElement("html");
+    main.innerHTML = this.html;
+    main.querySelectorAll("a").forEach((a) => a.setAttribute("target", "_top"));
+    const overlay = document.createElement("div");
+    overlay.dataset.hybridly = "";
+    overlay.style.position = "fixed";
+    overlay.style.width = "100vw";
+    overlay.style.height = "100vh";
+    overlay.style.padding = "50px";
+    overlay.style.boxSizing = "border-box";
+    overlay.style.backgroundColor = "rgba(0, 0, 0, .35)";
+    overlay.style.color = "white";
+    overlay.style.zIndex = "2147483638";
+    overlay.style.overflow = "hidden";
+    const iframe = document.createElement("iframe");
+    iframe.style.backgroundColor = "#050505";
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.borderRadius = "10px";
+    overlay.appendChild(iframe);
+    const style2 = document.createElement("style");
+    style2.innerHTML = `
+			[data-hybridly] {
+				opacity: 0;
+				overflow: hidden;
+				transition: opacity ${this.animationDurationInMs}ms ease-out;
+			}
+
+			[data-hybridly="visible"] {
+				opacity: 1;
+			}
+
+			[data-hybridly] iframe {
+				box-shadow: 0px 10px 35px 5px rgba(0,0,0,0.2);
+				opacity: 0;
+				overflow: hidden;
+				transform: scale(.85);
+				transition: all 100ms ease-out;
+			}
+			
+			[data-hybridly="visible"] iframe {
+				transform: scale(1);
+				opacity: 1;
+			}
+		`;
+    this.main = main;
+    this.overlay = overlay;
+    this.iframe = iframe;
+    this.style = style2;
+  }
+  show() {
+    stack.push(this.id);
+    this.overlay.addEventListener("click", () => this.destroy());
+    this.hideOnEscape = (event) => {
+      if (event.keyCode === 27) {
+        this.destroy();
+      }
+    };
+    document.addEventListener("keydown", this.hideOnEscape);
+    document.body.prepend(this.style);
+    document.body.prepend(this.overlay);
+    this.iframe.contentWindow?.document.open();
+    this.iframe.contentWindow?.document.write(this.main.outerHTML);
+    this.iframe.contentWindow?.document.close();
+    this.overlay.dataset.hybridly = "visible";
+  }
+  destroy() {
+    stack.splice(stack.indexOf(this.html), 1);
+    this.overlay.dataset.hybridly = "";
+    setTimeout(() => {
+      this.overlay.outerHTML = "";
+      this.overlay.remove();
+      this.style.remove();
+      document.removeEventListener("keydown", this.hideOnEscape);
+    }, this.animationDurationInMs);
+  }
+}
+function showResponseErrorModal(response) {
+  return Modal.fromException(response, "non-hybrid-response");
+}
+function showViewComponentErrorModal(response) {
+  return Modal.forViewComponent(response, `view-component-${response}`);
+}
+function htmlStyle() {
+  return `
+		html {
+			background-color: #050505;
+			color: white;
+			font-family: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,Noto Sans,sans-serif,"Apple Color Emoji","Segoe UI Emoji",Segoe UI Symbol,"Noto Color Emoji";
+			display: flex;
+			flex-direction: column;
+			height: 100%;
+		}
+
+		a {
+			color: white;
+		}
+	`;
+}
+function style() {
+  return `
+		${htmlStyle()}
+		body {
+			padding: 5rem 2rem;
+			flex-grow: 1;
+		}
+		.m-1 {
+			margin: 0.25rem;
+		}
+		.m-2 {
+			margin: 0.5rem;
+		}
+		.mt-6 {
+			margin-top: 1.5rem;
+		}
+		.m-auto {
+			margin: auto;
+		}
+		.h-full {
+			height: 100%;
+		}
+		.max-h-[500px] {
+			max-height: 500px;
+		}
+		.w-full {
+			width: 100%;
+		}
+		.flex {
+			display: flex;
+		}
+		.justify-center {
+			justify-content: center;
+		}
+		.text-center {
+			text-align: center;
+		}
+		.text-left {
+			text-align: left;
+		}
+		.text-5xl {
+			font-size: 3rem;
+			line-height: 1;
+		}
+		.text-lg {
+			font-size: 1.125rem;
+			line-height: 1.75rem;
+		}
+		.text-xl {
+			font-size: 1.25rem;
+			line-height: 1.75rem;
+		}
+		.text-sm {
+			font-size: 0.875rem;
+			line-height: 1.25rem;
+		}
+		.font-thin {
+			font-weight: 100;
+		}
+		.underline {
+			text-decoration-line: underline;
+		}
+		.underline-dotted {
+			text-decoration-style: dotted;
+		}
+		.opacity-30 {
+			opacity: 0.3;
+		}
+		.opacity-80 {
+			opacity: 0.8;
+		}
+	`;
+}
+
+function random(length = 10) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let str = "";
+  for (let i = 0; i < length; i++) {
+    str += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return str;
+}
+function match(value2, lookup, ...args) {
+  if (value2 in lookup || "default" in lookup) {
+    const returnValue = value2 in lookup ? lookup[value2] : lookup.default;
+    return typeof returnValue === "function" ? returnValue(...args) : returnValue;
+  }
+  const handlers = Object.keys(lookup).map((key) => `"${key}"`).join(", ");
+  const error = new Error(`Tried to handle "${value2}" but there is no handler defined. Only defined handlers are: ${handlers}.`);
+  throw error;
+}
+function debounce(fn, delay) {
+  let timeoutID;
+  return function(...args) {
+    clearTimeout(timeoutID);
+    timeoutID = setTimeout(() => fn(args), delay);
+  };
+}
+function value(value2) {
+  if (typeof value2 === "function") {
+    return value2?.();
+  }
+  return value2;
+}
+function when(condition, data, _default) {
+  if (!condition) {
+    return _default;
+  }
+  return data;
+}
+function merge(x, y, options = {}) {
+  const arrayMerge = typeof options?.arrayMerge === "function" ? options.arrayMerge : options?.overwriteArray !== false ? (_, s) => s : void 0;
+  const isMergeableObject = options?.mergePlainObjects ? isPlainObject : void 0;
+  return baseMerge(x, y, {
+    arrayMerge,
+    isMergeableObject
+  });
+}
+function removeTrailingSlash(string) {
+  return string.replace(/\/+$/, "");
+}
+function setValueAtPath(obj, path, value2) {
+  if (!path.includes(".")) {
+    obj[path] = value2;
+    return;
+  }
+  const segments = path.split(".");
+  let nestedObject = obj;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const key = segments[i];
+    nestedObject = nestedObject[key] = nestedObject[key] || {};
+  }
+  nestedObject[segments[segments.length - 1]] = value2;
+}
+function unsetPropertyAtPath(obj, path) {
+  if (!path.includes(".")) {
+    delete obj[path];
+    return;
+  }
+  const segments = path.split(".");
+  let nestedObject = obj;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const key = segments[i];
+    nestedObject = nestedObject[key] = nestedObject[key] || {};
+  }
+  delete nestedObject[segments[segments.length - 1]];
+  if (Object.keys(nestedObject).length === 0) {
+    unsetPropertyAtPath(obj, segments.slice(0, -1).join("."));
+  }
+}
+
+const debug = {
+  router: makeDebugger("hybridly:core:router"),
+  history: makeDebugger("hybridly:core:history"),
+  url: makeDebugger("hybridly:core:url"),
+  context: makeDebugger("hybridly:core:context"),
+  external: makeDebugger("hybridly:core:external"),
+  scroll: makeDebugger("hybridly:core:scroll"),
+  hook: makeDebugger("hybridly:core:hook"),
+  plugin: (name, ...args) => makeDebugger("hybridly:plugin").extend(name.replace("hybridly:", ""))(args.shift(), ...args),
+  adapter: (name, ...args) => makeDebugger("hybridly:adapter").extend(name)(args.shift(), ...args)
+};
+
+export { debounce, debug, hasFiles, match, merge, objectToFormData, random, removeTrailingSlash, setValueAtPath, showResponseErrorModal, showViewComponentErrorModal, unsetPropertyAtPath, value, when };

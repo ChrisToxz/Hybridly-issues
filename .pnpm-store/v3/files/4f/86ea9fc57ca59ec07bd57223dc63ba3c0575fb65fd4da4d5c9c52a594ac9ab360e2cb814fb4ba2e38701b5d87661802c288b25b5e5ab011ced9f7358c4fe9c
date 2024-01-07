@@ -1,0 +1,26 @@
+const r = Object.prototype.hasOwnProperty;
+function d(s, n) {
+  return n.split(".").reduce((o, t) => {
+    if (!(typeof o != "object" || !r.call(o, t)))
+      return o == null ? void 0 : o[t];
+  }, s);
+}
+function l(s, n, y) {
+  const o = n.split("."), t = o.pop();
+  if (t === void 0)
+    throw new Error("Path is empty");
+  const f = o.reduce((e, i) => {
+    if (typeof e != "object" || !r.call(e, i))
+      throw new Error(`Property ${i} is undefined`);
+    const p = e == null ? void 0 : e[i];
+    if (p == null)
+      throw new Error(`Property ${i} is undefined`);
+    return p;
+  }, s);
+  f[t] = y;
+}
+export {
+  d as getByPath,
+  l as setByPath
+};
+//# sourceMappingURL=index.js.map

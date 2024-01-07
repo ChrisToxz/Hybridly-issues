@@ -1,0 +1,9 @@
+'use strict';
+
+const vue = require('@hybridly/vue');
+
+
+
+Object.keys(vue).forEach(function (k) {
+	if (k !== 'default' && !Object.prototype.hasOwnProperty.call(exports, k)) exports[k] = vue[k];
+});

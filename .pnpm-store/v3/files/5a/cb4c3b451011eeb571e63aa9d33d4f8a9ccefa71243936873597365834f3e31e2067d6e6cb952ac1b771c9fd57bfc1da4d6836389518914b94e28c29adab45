@@ -1,0 +1,110 @@
+declare type BuildTuple<L extends number, T extends unknown[] = []> = T extends {
+    length: L;
+} ? T : BuildTuple<L, [...T, unknown]>;
+
+declare type ExcludeNullUndefined<T> = Exclude<T, null | undefined>;
+
+declare type FilterIndexSignatureType<T> = string extends T ? never : number extends T ? never : symbol extends T ? never : T;
+
+declare type GetArrayElement<T> = T extends (infer U)[] ? U : never;
+
+declare type GetArrayPaths<T, DepthCarry extends unknown[]> = `${number}.${Path_2<GetArrayElement<T>, DepthCarry>}`;
+
+/**
+ * Retrieves a value from an object by dot notation. The value is received by optional chaining,
+ * therefore this function returns undefined if an intermediate property is undefined.
+ *
+ * @param object - object to get value from
+ * @param path - path to value
+ *
+ * @privateRemarks
+ * The intersection between PathEntry<T, 10>  and string is necessary for TypeScript to successfully narrow down the type of P based on the user-provided path input.
+ * Without the intersection, the path would just be of type PathEntry<T, 10> and PathValueEntry would be a union of all possible return types.
+ * By using the intersection, TypeScript is forced to apply the PathEntry constraints and infer the type from the provided user input.
+ */
+export declare function getByPath<T extends SearchableObject, P extends Path<T> & string>(object: T, path: P): PathValue<T, P>;
+
+declare type GetRecordPaths<T, DepthCarry extends unknown[], K extends keyof T = keyof T> = K extends keyof T ? RemoveInvalidDotPathKeys<K> | `${RemoveInvalidDotPathKeys<K>}.${Path_2<T[K], DepthCarry>}` : never;
+
+declare type GetTuplePaths<T extends unknown[], DepthCarry extends unknown[]> = NumbersToZero<T, DepthCarry> extends infer R ? R extends number ? R | `${R}.${Path_2<TupleElement<T, R>, DepthCarry>}` : never : never;
+
+declare type GetValidIndexSignature<T> = Exclude<keyof T, symbol> extends infer K ? K extends string | number ? K : never : never;
+
+declare type HasIndexSignature<T> = string extends keyof T ? true : number extends keyof T ? true : symbol extends keyof T ? true : false;
+
+/**
+ * check if a type is any
+ * @link https://stackoverflow.com/a/49928360/1490091
+ */
+declare type IsAny<T> = 0 extends 1 & T ? true : false;
+
+declare type IsArray<T> = T extends any[] ? true : false;
+
+declare type IsEmptyArray<T> = T extends [] ? true : false;
+
+declare type IsNever<T> = [T] extends [never] ? true : false;
+
+declare type IsNullableOrUndefineable<T> = null extends T ? true : undefined extends T ? true : false;
+
+declare type IsPrimitive<T> = T extends string | number | boolean | bigint | symbol | undefined | null ? true : false;
+
+declare type IsTuple<T> = T extends [any, ...any[]] ? true : false;
+
+/**
+ * check if a type is unknown
+ * @link https://github.com/sindresorhus/type-fest
+ */
+declare type IsUnknown<T> = IsNever<T> extends true ? false : IsAny<T> extends true ? false : unknown extends T ? true : false;
+
+declare type MinusOne<N extends unknown[]> = N extends [...infer U, unknown] ? U : never;
+
+declare type NumbersToZero<IterationCarry extends unknown[], DepthCarry extends unknown[]> = TupleLength<DepthCarry> extends 0 ? any : TupleLength<IterationCarry> extends 0 ? never : NumbersToZero<MinusOne<IterationCarry>, MinusOne<DepthCarry>> | TupleLength<MinusOne<IterationCarry>>;
+
+export declare type Path<T, Depth extends number = 10> = Path_2<T, BuildTuple<Depth>>;
+
+declare type Path_2<T, DepthCarry extends unknown[]> = TupleLength<DepthCarry> extends 0 ? IsPrimitive<T> extends true ? never : any : T extends T ? PathStep<Writeable<ExcludeNullUndefined<T>>, MinusOne<DepthCarry>> : never;
+
+declare type PathStep<T, Depth extends unknown[]> = IsAny<T> extends true ? string : IsUnknown<T> extends true ? never : IsPrimitive<T> extends true ? never : IsTuple<T> extends true ? T extends unknown[] ? GetTuplePaths<T, Depth> : never : IsArray<T> extends true ? (IsEmptyArray<T> extends true ? never : number) | GetArrayPaths<T, Depth> : HasIndexSignature<T> extends true ? GetValidIndexSignature<T> | GetRecordPaths<RemoveIndexSignature<T>, Depth> : GetRecordPaths<T, Depth>;
+
+export declare type PathValue<T, P extends Path<T, Depth>, Depth extends number = 10> = PathValue_2<T, P, BuildTuple<Depth>>;
+
+declare type PathValue_2<T, P, DepthCarry extends unknown[]> = TupleLength<DepthCarry> extends 0 ? IsPrimitive<T> extends true ? never : unknown : T extends T ? PathValueStep<Writeable<T>, P, MinusOne<DepthCarry>> : never;
+
+declare type PathValueStep<T, P, DepthCarry extends unknown[]> = IsAny<T> extends true ? any : IsUnknown<T> extends true ? unknown : IsNullableOrUndefineable<T> extends true ? PathValue_2<ExcludeNullUndefined<T>, P, DepthCarry> | undefined : IsTuple<T> extends true ? P extends `${infer H}.${infer R}` ? PathValue_2<TupleElement<T, H>, R, DepthCarry> : TupleElement<T, P> : IsArray<T> extends true ? P extends `${infer _H}.${infer R}` ? PathValue_2<GetArrayElement<T>, R, DepthCarry> | undefined : GetArrayElement<T> | undefined : P extends `${infer H}.${infer R}` ? H extends keyof T ? PathValue_2<T[H], R, DepthCarry> | (HasIndexSignature<T> extends true ? undefined : never) : never : P extends keyof T ? T[P] | (HasIndexSignature<T> extends true ? undefined : never) : never;
+
+declare type RemoveIndexSignature<T> = {
+    [K in keyof T as FilterIndexSignatureType<K>]: T[K];
+};
+
+declare type RemoveInvalidDotPathKeys<T> = T extends symbol ? never : T extends number ? T : T extends string ? T extends `${infer _K}.${infer _R}` ? never : T : never;
+
+export declare type SearchableObject = Record<never, never> | unknown[];
+
+/**
+ * Sets a value in an object by dot notation. If an intermediate property is undefined,
+ * this function will throw an error.
+ *
+ * @param object - object to set value in
+ * @param path - path to value
+ * @param value - value to set
+ *
+ * @throws {Error} - if an intermediate property is undefined
+ *
+ * @privateRemarks
+ * The intersection between PathEntry<T, 10>  and string is necessary for TypeScript to successfully narrow down the type of P based on the user-provided path input.
+ * Without the intersection, the path would just be of type PathEntry<T, 10> and PathValueEntry would be a union of all possible return types.
+ * By using the intersection, TypeScript is forced to apply the PathEntry constraints and infer the type from the provided user input.
+ */
+export declare function setByPath<T extends SearchableObject, P extends Path<T> & string, V extends PathValue<T, P>>(object: T, path: P, value: V): void;
+
+declare type TupleElement<T, N> = N extends keyof T ? T[N] : never;
+
+declare type TupleLength<T> = T extends {
+    length: infer L;
+} ? (L extends number ? L : never) : never;
+
+declare type Writeable<T> = {
+    -readonly [K in keyof T]: T[K];
+};
+
+export { }

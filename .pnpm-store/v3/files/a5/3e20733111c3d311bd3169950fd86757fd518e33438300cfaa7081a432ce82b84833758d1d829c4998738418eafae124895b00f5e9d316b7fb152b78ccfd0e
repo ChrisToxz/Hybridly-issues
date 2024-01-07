@@ -1,0 +1,517 @@
+import { RequestData } from '@hybridly/utils';
+import { AxiosResponse, AxiosProgressEvent, Axios } from 'axios';
+
+type MaybePromise<T> = T | Promise<T>;
+
+interface RequestHooks {
+    /**
+         * Called before a navigation request is going to happen.
+         */
+    before: (options: HybridRequestOptions, context: InternalRouterContext) => MaybePromise<any | boolean>;
+    /**
+     * Called before the request of a navigation is going to happen.
+     */
+    start: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when progress on the request is being made.
+     */
+    progress: (progress: Progress, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when data is received after a request for a navigation.
+     */
+    data: (response: AxiosResponse, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a request is successful and there is no error.
+     */
+    success: (payload: HybridPayload, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a request is successful but there were errors.
+     */
+    error: (errors: Errors, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a request has been aborted.
+     */
+    abort: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a response to a request is not a valid hybrid response.
+     */
+    invalid: (response: AxiosResponse, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when an unknowne exception was triggered.
+     */
+    exception: (error: Error, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called whenever the request failed, for any reason, in addition to other hooks.
+     */
+    fail: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called after a request has been made, even if it didn't succeed.
+     */
+    after: (context: InternalRouterContext) => MaybePromise<any>;
+}
+interface Hooks extends RequestHooks {
+    /**
+         * Called when Hybridly's context is initialized.
+         */
+    initialized: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called after Hybridly's initial load.
+     */
+    ready: (context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a back-forward navigation occurs.
+     */
+    backForward: (state: any, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a component navigation is being made.
+     */
+    navigating: (options: InternalNavigationOptions, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a component has been navigated to.
+     */
+    navigated: (options: InternalNavigationOptions, context: InternalRouterContext) => MaybePromise<any>;
+    /**
+     * Called when a component has been navigated to and was mounted by the adapter.
+     */
+    mounted: (options: InternalNavigationOptions & MountedHookOptions, context: InternalRouterContext) => MaybePromise<any>;
+}
+interface MountedHookOptions {
+    /**
+     * Whether the component being mounted is a dialog.
+     */
+    isDialog: boolean;
+}
+interface HookOptions {
+    /** Executes the hook only once. */
+    once?: boolean;
+}
+/**
+ * Registers a global hook.
+ */
+declare function registerHook<T extends keyof Hooks>(hook: T, fn: Hooks[T], options?: HookOptions): () => void;
+
+interface Plugin extends Partial<Hooks> {
+    /** Identifier of the plugin. */
+    name: string;
+}
+declare function definePlugin(plugin: Plugin): Plugin;
+
+interface CloseDialogOptions extends HybridRequestOptions {
+    /**
+     * Close the dialog without a round-trip to the server.
+     * @default false
+     */
+    local?: boolean;
+}
+
+type UrlResolvable = string | URL | Location;
+type UrlTransformable = BaseUrlTransformable | ((string: URL) => BaseUrlTransformable);
+type BaseUrlTransformable = Partial<Omit<URL, 'searchParams' | 'toJSON' | 'toString'>> & {
+    query?: any;
+    trailingSlash?: boolean;
+};
+/**
+ * Converts an input to an URL, optionally changing its properties after initialization.
+ */
+declare function makeUrl(href: UrlResolvable, transformations?: UrlTransformable): URL;
+/**
+ * Checks if the given URLs have the same origin and path.
+ */
+declare function sameUrls(...hrefs: UrlResolvable[]): boolean;
+
+type ConditionalNavigationOption<T extends boolean | string> = T | ((payload: NavigationOptions) => T);
+interface ComponentNavigationOptions {
+    /** Dialog data. */
+    dialog?: Dialog | false;
+    /** Name of the component to use. */
+    component?: string;
+    /** Properties to apply to the component. */
+    properties?: Properties;
+    /**
+     * Whether to replace the current history state instead of adding
+     * one. This affects the browser's "back" and "forward" features.
+     */
+    replace?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the current scrollbar position. */
+    preserveScroll?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the current view component state. */
+    preserveState?: ConditionalNavigationOption<boolean>;
+}
+interface NavigationOptions {
+    /** View to navigate to. */
+    payload?: HybridPayload;
+    /**
+     * Whether to replace the current history state instead of adding
+     * one. This affects the browser's "back" and "forward" features.
+     */
+    replace?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the scrollbars positions on the view. */
+    preserveScroll?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the current view component's state. */
+    preserveState?: ConditionalNavigationOption<boolean>;
+    /** Whether to preserve the current URL. */
+    preserveUrl?: ConditionalNavigationOption<boolean>;
+    /**
+     * Properties of the given URL to override.
+     * @example
+     * ```ts
+     * router.get('/login?redirect=/', {
+     * 	transformUrl: { search: '' }
+     * }
+     * ```
+     */
+    transformUrl?: UrlTransformable;
+    /**
+     * Defines whether the history state should be updated.
+     * @internal This is an advanced property meant to be used internally.
+     */
+    updateHistoryState?: boolean;
+}
+interface InternalNavigationOptions extends NavigationOptions {
+    /**
+     * Defines the kind of navigation being performed.
+     * - initial: the initial load's navigation
+     * - server: a navigation initiated by a server round-trip
+     * - local: a navigation initiated by `router.local`
+     * - back-forward: a navigation initiated by the browser's `popstate` event
+     * @internal
+     */
+    type: 'initial' | 'local' | 'back-forward' | 'server';
+    /**
+     * Defines whether this navigation opens a dialog.
+     * @internal
+     */
+    hasDialog?: boolean;
+}
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+interface HybridRequestOptions extends Omit<NavigationOptions, 'payload'> {
+    /** The URL to navigation. */
+    url?: UrlResolvable;
+    /** HTTP verb to use for the request. */
+    method?: Method | Lowercase<Method>;
+    /** Body of the request. */
+    data?: RequestData;
+    /** Which properties to update for this navigation. Other properties will be ignored. */
+    only?: string | string[];
+    /** Which properties not to update for this navigation. Other properties will be updated. */
+    except?: string | string[];
+    /** Specific headers to add to the request. */
+    headers?: Record<string, string>;
+    /** The bag in which to put potential errors. */
+    errorBag?: string;
+    /** Hooks for this navigation. */
+    hooks?: Partial<RequestHooks>;
+    /** If `true`, force the usage of a `FormData` object. */
+    useFormData?: boolean;
+    /**
+     * If `false`, disable automatic form spoofing.
+     * @see https://laravel.com/docs/9.x/routing#form-method-spoofing
+     */
+    spoof?: boolean;
+    /**
+     * If `false`, does not trigger the progress bar for this request.
+     */
+    progress?: boolean;
+}
+interface NavigationResponse {
+    response?: AxiosResponse;
+    error?: {
+        type: string;
+        actual: Error;
+    };
+}
+interface DialogRouter {
+    /** Closes the current dialog. */
+    close: (options?: CloseDialogOptions) => void;
+}
+interface Router {
+    /** Aborts the currently pending navigate, if any. */
+    abort: () => Promise<void>;
+    /** Checks if there is an active navigate. */
+    active: () => boolean;
+    /** Makes a navigate with the given options. */
+    navigate: (options: HybridRequestOptions) => Promise<NavigationResponse>;
+    /** Reloads the current page. */
+    reload: (options?: HybridRequestOptions) => Promise<NavigationResponse>;
+    /** Makes a request to given named route. The HTTP verb is determined automatically but can be overriden. */
+    to: <T extends RouteName>(name: T, parameters?: RouteParameters<T>, options?: Omit<HybridRequestOptions, 'url'>) => Promise<NavigationResponse>;
+    /** Makes a GET request to the given URL. */
+    get: (url: UrlResolvable, options?: Omit<HybridRequestOptions, 'method' | 'url'>) => Promise<NavigationResponse>;
+    /** Makes a POST request to the given URL. */
+    post: (url: UrlResolvable, options?: Omit<HybridRequestOptions, 'method' | 'url'>) => Promise<NavigationResponse>;
+    /** Makes a PUT request to the given URL. */
+    put: (url: UrlResolvable, options?: Omit<HybridRequestOptions, 'method' | 'url'>) => Promise<NavigationResponse>;
+    /** Makes a PATCH request to the given URL. */
+    patch: (url: UrlResolvable, options?: Omit<HybridRequestOptions, 'method' | 'url'>) => Promise<NavigationResponse>;
+    /** Makes a DELETE request to the given URL. */
+    delete: (url: UrlResolvable, options?: Omit<HybridRequestOptions, 'method' | 'url'>) => Promise<NavigationResponse>;
+    /** Navigates to the given external URL. Convenience method using `document.location.href`. */
+    external: (url: UrlResolvable, data?: HybridRequestOptions['data']) => void;
+    /** Navigates to the given URL without a server round-trip. */
+    local: (url: UrlResolvable, options: ComponentNavigationOptions) => Promise<void>;
+    /** Preloads the given URL. The next time this URL is navigated to, it will be loaded from the cache. */
+    preload: (url: UrlResolvable, options?: Omit<HybridRequestOptions, 'method' | 'url'>) => Promise<boolean>;
+    /** Determines if the given route name and parameters matches the current route. */
+    matches: <T extends RouteName>(name: T, parameters?: RouteParameters<T>) => boolean;
+    /** Gets the current route name. Returns `undefined` is unknown. */
+    current: () => string | undefined;
+    /** Access the dialog router. */
+    dialog: DialogRouter;
+    /** Access the history state. */
+    history: {
+        /** Remembers a value for the given route. */
+        remember: (key: string, value: any) => void;
+        /** Gets a remembered value. */
+        get: <T = any>(key: string) => T | undefined;
+    };
+}
+/** A navigation being made. */
+interface PendingNavigation {
+    /** The URL to which the request is being made. */
+    url: URL;
+    /** Abort controller associated to this request. */
+    controller: AbortController;
+    /** Options for the associated hybrid request. */
+    options: HybridRequestOptions;
+    /** Navigation identifier. */
+    id: string;
+    /** Current status. */
+    status: 'pending' | 'success' | 'error';
+}
+/** A view or dialog component. */
+interface View {
+    /** Name of the component to use. */
+    component?: string;
+    /** Properties to apply to the component. */
+    properties: Properties;
+    /** Deferred properties for this view. */
+    deferred: string[];
+}
+interface Dialog extends Required<View> {
+    /** URL that is the base background view when navigating to the dialog directly. */
+    baseUrl: string;
+    /** URL to which the dialog should redirect when closed. */
+    redirectUrl: string;
+    /** Unique identifier for this modal's lifecycle. */
+    key: string;
+}
+type Property = null | string | number | boolean | Property[] | {
+    [name: string]: Property;
+};
+type Properties = Record<string | number, Property>;
+interface SwapOptions<T> {
+    /** The new component. */
+    component: T;
+    /** The new properties. */
+    properties?: any;
+    /** Whether to preserve the state of the component. */
+    preserveState?: boolean;
+    /** Current dialog. */
+    dialog?: Dialog;
+    /** On mounted callback. */
+    onMounted?: (options: MountedHookOptions) => void;
+}
+type ViewComponent = any;
+type ResolveComponent = (name: string) => Promise<ViewComponent>;
+type SwapView = (options: SwapOptions<ViewComponent>) => Promise<void>;
+/** The payload of a navigation request from the server. */
+interface HybridPayload {
+    /** The view to use in this request. */
+    view: View;
+    /** An optional dialog. */
+    dialog?: Dialog;
+    /** The current page URL. */
+    url: string;
+    /** The current asset version. */
+    version: string;
+}
+interface Progress {
+    /** Base event. */
+    event: AxiosProgressEvent;
+    /** Computed percentage. */
+    percentage: Readonly<number>;
+}
+type Errors = any;
+
+interface RoutingConfiguration {
+    url: string;
+    port?: number;
+    defaults: Record<string, any>;
+    routes: Record<string, RouteDefinition>;
+}
+interface RouteDefinition {
+    uri: string;
+    method: Method[];
+    bindings: Record<string, string>;
+    domain?: string;
+    wheres?: Record<string, string>;
+    name: string;
+}
+interface GlobalRouteCollection extends RoutingConfiguration {
+}
+type RouteName = keyof GlobalRouteCollection['routes'];
+type RouteParameters<T extends RouteName> = Record<keyof GlobalRouteCollection['routes'][T]['bindings'], any> & Record<string, any>;
+
+/** Options for creating a router context. */
+interface RouterContextOptions {
+    /** The initial payload served by the browser. */
+    payload: HybridPayload;
+    /** Adapter-specific functions. */
+    adapter: Adapter;
+    /** History state serializer. */
+    serializer?: Serializer;
+    /** List of plugins. */
+    plugins?: Plugin[];
+    /** The Axios instance. */
+    axios?: Axios;
+    /** Initial routing configuration. */
+    routing?: RoutingConfiguration;
+    /** Whether to display response error modals. */
+    responseErrorModals?: boolean;
+}
+/** Router context. */
+interface InternalRouterContext {
+    /** The current, normalized URL. */
+    url: string;
+    /** The current view. */
+    view: View;
+    /** The current, optional dialog. */
+    dialog?: Dialog;
+    /** The current local asset version. */
+    version: string;
+    /** The current adapter's functions. */
+    adapter: ResolvedAdapter;
+    /** Scroll positions of the current page's DOM elements. */
+    scrollRegions: ScrollRegion[];
+    /** Arbitrary state. */
+    memo: Record<string, any>;
+    /** Currently pending navigation. */
+    pendingNavigation?: PendingNavigation;
+    /** History state serializer. */
+    serializer: Serializer;
+    /** List of plugins. */
+    plugins: Plugin[];
+    /** Global hooks. */
+    hooks: Partial<Record<keyof Hooks, Array<Function>>>;
+    /** The Axios instance. */
+    axios: Axios;
+    /** Routing configuration. */
+    routing?: RoutingConfiguration;
+    /** Whether to display response error modals. */
+    responseErrorModals?: boolean;
+    /** Cache of preload requests. */
+    preloadCache: Map<string, AxiosResponse>;
+}
+/** Router context. */
+type RouterContext = Readonly<InternalRouterContext>;
+/** Adapter-specific functions. */
+interface Adapter {
+    /** Resolves a component from the given name. */
+    resolveComponent: ResolveComponent;
+    /** Called when the view is swapped. */
+    onViewSwap: SwapView;
+    /** Called when the context is updated. */
+    onContextUpdate?: (context: InternalRouterContext) => void;
+    /** Called when a dialog is closed. */
+    onDialogClose?: (context: InternalRouterContext) => void;
+    /** Called when Hybridly is waiting for a component to be mounted. The given callback should be executed after the view component is mounted. */
+    executeOnMounted: (callback: Function) => void;
+}
+interface ResolvedAdapter extends Adapter {
+    updateRoutingConfiguration: (routing?: RoutingConfiguration) => void;
+}
+interface ScrollRegion {
+    top: number;
+    left: number;
+}
+/** Provides methods to serialize the state into the history state. */
+interface Serializer {
+    serialize: <T>(view: T) => string;
+    unserialize: <T>(state?: string) => T | undefined;
+}
+
+/** Gets the current context. */
+declare function getRouterContext(): RouterContext;
+
+/**
+ * The hybridly router.
+ * This is the core function that you can use to navigate in
+ * your application. Make sure the routes you call return a
+ * hybrid response, otherwise you need to call `external`.
+ *
+ * @example
+ * router.get('/posts/edit', { post })
+ */
+declare const router: Router;
+/** Creates the hybridly router. */
+declare function createRouter(options: RouterContextOptions): Promise<InternalRouterContext>;
+
+interface Authorizable<Authorizations extends Record<string, boolean>> {
+    authorization: Authorizations;
+}
+/**
+ * Checks whether the given data has the authorization for the given action.
+ * If the data object has no authorization definition corresponding to the given action, this method will return `false`.
+ */
+declare function can<Authorizations extends Record<string, boolean>, Data extends Authorizable<Authorizations>, Action extends keyof Data['authorization']>(resource: Data, action: Action): Authorizations[Action];
+
+/**
+ * Generates a route from the given route name.
+ */
+declare function route<T extends RouteName>(name: T, parameters?: RouteParameters<T>, absolute?: boolean): string;
+
+interface DynamicConfiguration {
+    versions: {
+        composer: string;
+        npm: string;
+        latest: string;
+        is_latest: boolean;
+    };
+    architecture: {
+        root_directory: string;
+        components_directory: string;
+        application_main_path: string;
+    };
+    components: {
+        eager?: boolean;
+        directories: string[];
+        views: Component[];
+        layouts: Component[];
+        components: Component[];
+    };
+    routing: RoutingConfiguration;
+}
+interface Component {
+    path: string;
+    identifier: string;
+    namespace: string;
+}
+
+declare const STORAGE_EXTERNAL_KEY = "hybridly:external";
+declare const HYBRIDLY_HEADER = "x-hybrid";
+declare const EXTERNAL_NAVIGATION_HEADER = "x-hybrid-external";
+declare const PARTIAL_COMPONENT_HEADER = "x-hybrid-partial-component";
+declare const ONLY_DATA_HEADER = "x-hybrid-only-data";
+declare const DIALOG_KEY_HEADER = "x-hybrid-dialog-key";
+declare const DIALOG_REDIRECT_HEADER = "x-hybrid-dialog-redirect";
+declare const EXCEPT_DATA_HEADER = "x-hybrid-except-data";
+declare const VERSION_HEADER = "x-hybrid-version";
+declare const ERROR_BAG_HEADER = "x-hybrid-error-bag";
+declare const SCROLL_REGION_ATTRIBUTE = "scroll-region";
+
+declare const constants_DIALOG_KEY_HEADER: typeof DIALOG_KEY_HEADER;
+declare const constants_DIALOG_REDIRECT_HEADER: typeof DIALOG_REDIRECT_HEADER;
+declare const constants_ERROR_BAG_HEADER: typeof ERROR_BAG_HEADER;
+declare const constants_EXCEPT_DATA_HEADER: typeof EXCEPT_DATA_HEADER;
+declare const constants_EXTERNAL_NAVIGATION_HEADER: typeof EXTERNAL_NAVIGATION_HEADER;
+declare const constants_HYBRIDLY_HEADER: typeof HYBRIDLY_HEADER;
+declare const constants_ONLY_DATA_HEADER: typeof ONLY_DATA_HEADER;
+declare const constants_PARTIAL_COMPONENT_HEADER: typeof PARTIAL_COMPONENT_HEADER;
+declare const constants_SCROLL_REGION_ATTRIBUTE: typeof SCROLL_REGION_ATTRIBUTE;
+declare const constants_STORAGE_EXTERNAL_KEY: typeof STORAGE_EXTERNAL_KEY;
+declare const constants_VERSION_HEADER: typeof VERSION_HEADER;
+declare namespace constants {
+  export { constants_DIALOG_KEY_HEADER as DIALOG_KEY_HEADER, constants_DIALOG_REDIRECT_HEADER as DIALOG_REDIRECT_HEADER, constants_ERROR_BAG_HEADER as ERROR_BAG_HEADER, constants_EXCEPT_DATA_HEADER as EXCEPT_DATA_HEADER, constants_EXTERNAL_NAVIGATION_HEADER as EXTERNAL_NAVIGATION_HEADER, constants_HYBRIDLY_HEADER as HYBRIDLY_HEADER, constants_ONLY_DATA_HEADER as ONLY_DATA_HEADER, constants_PARTIAL_COMPONENT_HEADER as PARTIAL_COMPONENT_HEADER, constants_SCROLL_REGION_ATTRIBUTE as SCROLL_REGION_ATTRIBUTE, constants_STORAGE_EXTERNAL_KEY as STORAGE_EXTERNAL_KEY, constants_VERSION_HEADER as VERSION_HEADER };
+}
+
+export { type Authorizable, type DynamicConfiguration, type GlobalRouteCollection, type HybridPayload, type HybridRequestOptions, type MaybePromise, type Method, type NavigationResponse, type Plugin, type Progress, type ResolveComponent, type RouteDefinition, type RouteName, type RouteParameters, type Router, type RouterContext, type RouterContextOptions, type RoutingConfiguration, type UrlResolvable, can, constants, createRouter, definePlugin, getRouterContext, makeUrl, registerHook, route, router, sameUrls };

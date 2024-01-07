@@ -1,0 +1,83 @@
+import makeDebugger from 'debug';
+export { default as clone } from 'lodash.clonedeep';
+
+type RequestData = Record<string, FormDataConvertible> | FormDataConvertible | FormData;
+type FormDataConvertible = {
+    [key: string]: FormDataConvertible;
+} | Array<FormDataConvertible> | Set<FormDataConvertible> | Blob | File | FormDataEntryValue | Date | boolean | number | null | undefined | string;
+/**
+ * Checks if the given object has a file.
+ */
+declare function hasFiles(data?: RequestData): boolean;
+/**
+ * Converts an object literal to a `FormData` object.
+ */
+declare function objectToFormData(source?: RequestData, form?: FormData, parentKey?: string): FormData;
+
+declare class Modal {
+    private html;
+    private id;
+    private main;
+    private overlay;
+    private iframe;
+    private style;
+    private hideOnEscape?;
+    private animationDurationInMs;
+    constructor(html: string, id: string);
+    static fromException(response: string, id: string): Modal;
+    static forViewComponent(component: string, id: string): Modal;
+    initializeDOM(): false | undefined;
+    show(): void;
+    destroy(): void;
+}
+declare function showResponseErrorModal(response: string): Modal;
+declare function showViewComponentErrorModal(response: string): Modal;
+
+declare function random(length?: number): string;
+/** Simple pattern matching util. */
+declare function match<TValue extends string | number = string, TReturnValue = unknown>(value: TValue, lookup: Record<TValue | 'default', TReturnValue | ((...args: any[]) => TReturnValue)>, ...args: any[]): TReturnValue | Promise<TReturnValue>;
+declare function debounce<F extends (...params: any[]) => ReturnType<F>>(fn: F, delay: number): F;
+declare function value<T>(value: T | (() => T)): T;
+declare function when<T, D>(condition: any, data: T, _default?: D): T | D | undefined;
+interface MergeOptions {
+    overwriteArray?: boolean;
+    mergePlainObjects?: boolean;
+    arrayMerge?: (target: any[], source: any[]) => any[];
+}
+declare function merge<T>(x: Partial<T>, y: Partial<T>, options?: MergeOptions): T;
+declare function removeTrailingSlash(string: string): string;
+/**
+ * Sets a value at a path in an object
+ *
+ * This function will set a value at a path in an object, creating any missing
+ * objects along the way. The object is modified in place.
+ *
+ * @param obj the object to set the value in
+ * @param path a dot-separated path to the property to set
+ * @param value the value to set
+ */
+declare function setValueAtPath(obj: any, path: string, value: any): void;
+/**
+ * Unsets a property at a path in an object
+ *
+ * This function will unset a property at a path in an object, deleting any
+ * objects along the way that are empty. The object is modified in place.
+ *
+ * @param obj the object to unset the property in
+ * @param path a dot-separated path to the property to unset
+ */
+declare function unsetPropertyAtPath(obj: any, path: string): void;
+
+declare const debug: {
+    router: makeDebugger.Debugger;
+    history: makeDebugger.Debugger;
+    url: makeDebugger.Debugger;
+    context: makeDebugger.Debugger;
+    external: makeDebugger.Debugger;
+    scroll: makeDebugger.Debugger;
+    hook: makeDebugger.Debugger;
+    plugin: (name: string, ...args: any[]) => void;
+    adapter: (name: string, ...args: any[]) => void;
+};
+
+export { type FormDataConvertible, type RequestData, debounce, debug, hasFiles, match, merge, objectToFormData, random, removeTrailingSlash, setValueAtPath, showResponseErrorModal, showViewComponentErrorModal, unsetPropertyAtPath, value, when };

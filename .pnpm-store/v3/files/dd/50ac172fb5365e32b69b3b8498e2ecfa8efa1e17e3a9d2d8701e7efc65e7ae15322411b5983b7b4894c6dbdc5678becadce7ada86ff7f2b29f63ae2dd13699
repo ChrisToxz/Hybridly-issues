@@ -1,0 +1,95 @@
+import { Plugin } from 'vite';
+import { DynamicConfiguration } from '@hybridly/core';
+import autoimport from 'unplugin-auto-import/vite';
+import icons from 'unplugin-icons/vite';
+import laravel from 'laravel-vite-plugin';
+import { Runner } from 'vite-plugin-run';
+import vue from '@vitejs/plugin-vue';
+import vueComponents from 'unplugin-vue-components/vite';
+import { ComponentResolver } from 'unplugin-vue-components/types';
+
+type AutoImportOptions = Parameters<typeof autoimport>[0];
+declare const HybridlyImports: {
+    'hybridly/vue': string[];
+    hybridly: string[];
+};
+
+type IconsOptions = Parameters<typeof icons>[0];
+type CustomIconOptions = string[] | {
+    /** Name of the icons directory under the root directory. */
+    icons?: string;
+    /** Names of the custom icon collections that should be registered. */
+    collections?: string[];
+};
+
+type LaravelOptions = Exclude<Parameters<typeof laravel>[0], string | string[]>;
+
+type VueOptions = Parameters<typeof vue>[0];
+
+type VueComponentsOptions = Parameters<typeof vueComponents>[0] & {
+    /** Name of the Link component. */
+    linkName?: string;
+    /** Custom prefix for Headless UI components. */
+    headlessUiPrefix?: string;
+    /** Custom prefix for Radix components. */
+    radixPrefix?: string;
+};
+type CustomResolvers = ComponentResolver | ComponentResolver[];
+type CustomComponentsOptions = VueComponentsOptions;
+declare function HybridlyResolver(linkName?: string): {
+    type: "component";
+    resolve: (name: string) => {
+        from: string;
+        name: string;
+        as: string;
+    } | undefined;
+};
+
+interface ViteOptions {
+    /** Path to the PHP executable. */
+    php?: string;
+    /** Options for the layout plugin. */
+    layout?: LayoutOptions;
+    /** Options for `@vitejs/plugin-vue`. */
+    vue?: false | VueOptions;
+    /** Options for `laravel-vite-plugin`. Set to `false` to disable. */
+    laravel?: false | Partial<LaravelOptions>;
+    /** Options for `vite-plugin-run`. Set to `false` to disable. */
+    run?: false | Runner[];
+    /** Options for `unplugin-auto-import`. Set to `false` to disable. */
+    autoImports?: false | AutoImportOptions;
+    /** Options for `unplugin-vue-components`. Set to `false` to disable. */
+    vueComponents?: false | CustomComponentsOptions;
+    /** Options for `unplugin-icons`. Set to `false` to disable. */
+    icons?: false | IconsOptions;
+    /** Options for custom icon collections. */
+    customIcons?: CustomIconOptions;
+    /** Override vue component resolvers. */
+    overrideResolvers?: CustomResolvers;
+    /** Whether to write shims. */
+    shims?: boolean;
+    /** Enables or disable the kill-switch. */
+    killSwitch?: boolean;
+    /** Extra `tsconfig.json` options. */
+    tsconfig?: TsConfigOptions;
+}
+interface LayoutOptions {
+    /** Custom RegExp for parsing the template string. */
+    templateRegExp?: RegExp;
+    /** Name of the layout used when no argument is provided to `layout`. */
+    defaultLayoutName?: string;
+}
+interface TsConfigOptions {
+    /** Defines types to add to `tsconfig.json`. */
+    types?: string[];
+    /** Defines paths to include with `tsconfig.json`. */
+    include?: string[];
+    /** Defines paths to exclude with `tsconfig.json`. */
+    exclude?: string[];
+}
+
+declare const _default: (options: ViteOptions, config: DynamicConfiguration) => Plugin;
+
+declare function plugin(options?: ViteOptions): Promise<any[]>;
+
+export { HybridlyImports, HybridlyResolver, type ViteOptions as Options, plugin as default, _default as layout };
